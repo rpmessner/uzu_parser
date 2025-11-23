@@ -602,6 +602,72 @@ defmodule UzuParserTest do
     end
   end
 
+  describe "replication" do
+    test "parses simple replication" do
+      events = UzuParser.parse("bd!3")
+
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.sound == "bd"))
+      assert Enum.at(events, 0).time == 0.0
+      assert_in_delta Enum.at(events, 1).time, 0.333, 0.01
+      assert_in_delta Enum.at(events, 2).time, 0.666, 0.01
+    end
+
+    test "parses replication in sequence" do
+      events = UzuParser.parse("bd!2 sd")
+
+      assert length(events) == 3
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 1).sound == "bd"
+      assert Enum.at(events, 2).sound == "sd"
+    end
+
+    test "parses replication with sample selection" do
+      events = UzuParser.parse("bd:1!3")
+
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.sound == "bd"))
+      assert Enum.all?(events, &(&1.sample == 1))
+    end
+
+    test "parses replication with probability" do
+      events = UzuParser.parse("bd!2?0.5")
+
+      assert length(events) == 2
+      assert Enum.all?(events, &(&1.sound == "bd"))
+      assert Enum.all?(events, &(&1.params == %{probability: 0.5}))
+    end
+
+    test "handles invalid replication gracefully" do
+      events = UzuParser.parse("bd!0")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd!0"
+    end
+
+    test "parses replication in subdivisions" do
+      events = UzuParser.parse("[bd!2 sd]")
+
+      assert length(events) == 3
+      assert Enum.map(events, & &1.sound) == ["bd", "bd", "sd"]
+    end
+
+    test "replication behaves like repetition" do
+      # bd!3 and bd*3 should produce the same result
+      events_replication = UzuParser.parse("bd!3")
+      events_repetition = UzuParser.parse("bd*3")
+
+      assert length(events_replication) == length(events_repetition)
+
+      Enum.zip(events_replication, events_repetition)
+      |> Enum.each(fn {e1, e2} ->
+        assert e1.sound == e2.sound
+        assert e1.time == e2.time
+        assert e1.duration == e2.duration
+      end)
+    end
+  end
+
   describe "event properties" do
     test "events have correct structure" do
       [event | _] = UzuParser.parse("bd")

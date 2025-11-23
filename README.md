@@ -116,6 +116,18 @@ UzuParser.parse("bd@1.5 sd")      # fractional weights supported
 
 Events are assigned time and duration proportionally based on their weights. Default weight is 1.0 if not specified.
 
+### Replication
+
+Exclamation mark repeats events (similar to `*` but clearer intent):
+
+```elixir
+UzuParser.parse("bd!3")           # three bd events
+UzuParser.parse("bd!2 sd")        # two kicks, one snare
+UzuParser.parse("[bd!2 sd]")      # replication in subdivision
+```
+
+Note: In this parser, `!` and `*` produce identical results. Both create separate steps rather than subdividing time.
+
 ### Complex Patterns
 
 Combine features for expressive patterns:
@@ -158,7 +170,6 @@ Each parsed event contains:
 
 ## Future Features
 
-- Replication: `"bd!3"` (repeat without acceleration)
 - Parameters: `"bd|gain:0.8|speed:2"`
 - Euclidean rhythms: `"bd(3,8)"` (3 hits in 8 steps)
 - Pattern transformations: `fast()`, `slow()`, `rev()`

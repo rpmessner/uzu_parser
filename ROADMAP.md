@@ -11,22 +11,14 @@ This roadmap is based on features from [TidalCycles](https://tidalcycles.org/doc
 - **Repetition** - Multiply with `*`: `"bd*4"`
 - **Sample selection** - Choose samples with `:`: `"bd:0 sd:1"`
 
-### v0.2.0 (In Progress)
+### v0.2.0 ✅ Complete
+- **Performance fix** - O(n²) → O(n) bracket collection
 - **Polyphony `,`** - Play multiple sounds simultaneously: `"[bd,sd,hh]"`
 - **Random Removal `?`** - Probabilistic events: `"bd?"` or `"bd?0.25"`
 - **Elongation `@`** - Temporal weight: `"bd@2 sd"` (proportional durations)
+- **Replication `!`** - Repeat events: `"bd!3"` (alternative to `*`)
 
-## 🎯 Phase 1: Essential Operators (Remaining for v0.2.0)
-
-Priority: High - Core pattern manipulation features
-
-### Replication `!`
-Repeat events without speeding up (like `*` but different timing).
-```elixir
-"bd!3"           # three separate bd steps
-"[bd sd]!2"      # repeat pattern twice
-```
-**Use case**: Pattern repetition, fill patterns
+## 🎯 Phase 1: Complete! 🎊
 
 ## 🚀 Phase 2: Pattern Selection (v0.3.0)
 

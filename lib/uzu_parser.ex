@@ -63,9 +63,18 @@ defmodule UzuParser do
   Events are assigned time and duration proportionally based on their weights.
   Default weight is 1.0 if not specified.
 
+  ### Replication
+  Exclamation mark repeats events (similar to `*` but clearer intent):
+
+      "bd!3"              # three bd events
+      "bd!2 sd"           # two kicks, one snare
+      "[bd!2 sd]"         # replication in subdivision
+
+  Note: In this parser, `!` and `*` produce identical results. Both create
+  separate steps rather than subdividing time.
+
   ## Future Features
   - Parameters: "bd|gain:0.8|speed:2"
-  - Replication: "bd!3" (repeat without acceleration)
   - Euclidean rhythms: "bd(3,8)"
   - Pattern transformations: fast(), slow(), rev()
   """
@@ -175,6 +184,10 @@ defmodule UzuParser do
       String.contains?(token, "@") ->
         parse_elongation(token)
 
+      # Handle replication: "bd!3" (like repetition but different semantics)
+      String.contains?(token, "!") ->
+        parse_replication(token)
+
       # Handle repetition: "bd*4" or "bd:1*4"
       String.contains?(token, "*") ->
         parse_repetition(token)
@@ -252,6 +265,10 @@ defmodule UzuParser do
       String.contains?(token, "@") and :elongation not in skip_modifiers ->
         parse_elongation(token)
 
+      # Handle replication: "bd!3"
+      String.contains?(token, "!") ->
+        parse_replication(token)
+
       # Handle repetition: "bd*4" or "bd:1*4"
       String.contains?(token, "*") ->
         parse_repetition(token)
@@ -300,6 +317,33 @@ defmodule UzuParser do
 
           _ ->
             # Invalid sample number, treat as literal
+            {:sound, token, nil, nil, nil}
+        end
+
+      _ ->
+        {:sound, token, nil, nil, nil}
+    end
+  end
+
+  # Parse replication: "bd!3" or "bd:1!3" -> replicated sound tokens
+  # Functionally similar to repetition but with different syntax
+  defp parse_replication(token) do
+    case String.split(token, "!", parts: 2) do
+      [sound_part, count_str] ->
+        case Integer.parse(count_str) do
+          {count, ""} when count > 0 ->
+            # Parse the sound part (which might have sample selection)
+            sound_token =
+              if String.contains?(sound_part, ":") do
+                parse_sample_selection(sound_part)
+              else
+                {:sound, sound_part, nil, nil, nil}
+              end
+
+            {:repeat, List.duplicate(sound_token, count)}
+
+          _ ->
+            # Invalid replication, treat as literal
             {:sound, token, nil, nil, nil}
         end
 

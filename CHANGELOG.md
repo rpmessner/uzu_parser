@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event data structure with time, duration, sound, and params
 - Comprehensive test suite (23 tests)
 - Complete documentation and examples
-- Extracted from kino_spaetzle project to enable code sharing
+- Extracted from kino_harmony project (formerly kino_spaetzle) to enable code sharing
 
 ### Supported Syntax
 - Basic sequences: `"bd sd hh sd"`

@@ -165,7 +165,7 @@ Each parsed event contains:
 
 ## Projects Using UzuParser
 
-- [KinoSpaetzle](https://github.com/rpmessner/kino_spaetzle) - Livebook live coding environment
+- [KinoHarmony](https://github.com/rpmessner/kino_harmony) - Livebook live coding environment with advanced jazz harmony
 - [discord_uzu](https://github.com/rpmessner/discord_uzu) - Discord bot for live coding
 
 ## Future Features

@@ -8,16 +8,16 @@
 
 This session established the project infrastructure and implemented the first new feature (sample selection) for UzuParser, an Elixir-based pattern mini-notation parser for live coding music.
 
-**Project Context**: UzuParser was **extracted from KinoSpaetzle** to be a standalone, reusable library. This allows:
+**Project Context**: UzuParser was **extracted from KinoHarmony** (formerly KinoSpaetzle) to be a standalone, reusable library. This allows:
 - **UzuParser** (this project): Focus purely on parsing mini-notation
-- **KinoSpaetzle**: Use UzuParser for parsing while focusing on UI and visualization
+- **KinoHarmony**: Use UzuParser for parsing while focusing on UI, visualization, and jazz harmony
 - **Waveform**: Handle audio scheduling and SuperDirt integration
 
-The design was validated against Waveform's `PatternScheduler` and `SuperDirt` modules to ensure seamless integration.
+The design was validated against Waveform's `PatternScheduler` and `SuperDirt` modules to ensure seamless integration with KinoHarmony.
 
 ## Context & Motivation
 
-**UzuParser** was extracted from [KinoSpaetzle](https://github.com/rpmessner/kino_spaetzle), a TidalCycles-inspired live coding environment for Livebook.
+**UzuParser** was extracted from [KinoHarmony](https://github.com/rpmessner/kino_harmony) (formerly KinoSpaetzle), a TidalCycles-inspired live coding environment for Livebook with advanced jazz harmony.
 
 **Extraction Rationale**:
 - **Separation of concerns**: Parser logic separate from UI/visualization
@@ -27,9 +27,9 @@ The design was validated against Waveform's `PatternScheduler` and `SuperDirt` m
 
 **Ecosystem**:
 ```
-KinoSpaetzle (Livebook UI) ─┐
-                            ├─→ UzuParser ─→ Waveform ─→ SuperDirt ─→ Audio
-discord_uzu (Discord bot) ──┘
+KinoHarmony (Livebook UI) ─┐
+                           ├─→ UzuParser ─→ Waveform ─→ SuperDirt ─→ Audio
+discord_uzu (Discord bot) ─┘
 ```
 
 ## Accomplishments
@@ -381,7 +381,7 @@ Order matters for features with multiple special characters:
 
 - **Project repos**:
   - This repo: https://github.com/rpmessner/uzu_parser
-  - KinoSpaetzle: https://github.com/rpmessner/kino_spaetzle
+  - KinoHarmony: https://github.com/rpmessner/kino_harmony
   - discord_uzu: https://github.com/rpmessner/discord_uzu
 
 - **Inspiration**:

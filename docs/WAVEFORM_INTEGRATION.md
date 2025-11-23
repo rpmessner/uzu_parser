@@ -8,22 +8,22 @@
 
 UzuParser is designed to integrate seamlessly with [Waveform](https://github.com/rpmessner/waveform), an Elixir OSC transport layer for SuperCollider/SuperDirt.
 
-UzuParser was **extracted from KinoSpaetzle** to be a standalone, reusable parser. This separation allows:
+UzuParser was **extracted from KinoHarmony** to be a standalone, reusable parser. This separation allows:
 - **UzuParser**: Focus on parsing mini-notation → structured events
-- **KinoSpaetzle**: Focus on Livebook UI, pattern management, visualization
+- **KinoHarmony**: Focus on Livebook UI, pattern management, visualization
 - **Waveform**: Focus on audio scheduling, OSC transport, SuperDirt integration
 
 **Integration Flow**:
 ```
 Mini-notation → UzuParser → Events → PatternScheduler → SuperDirt → Audio
      ↑
-KinoSpaetzle uses UzuParser for parsing
+KinoHarmony uses UzuParser for parsing
 ```
 
 **Architecture**:
 ```
 ┌──────────────────────────────────────┐
-│  KinoSpaetzle (Livebook UI)          │
+│  KinoHarmony (Livebook UI)          │
 │  - Pattern editor                    │
 │  - Visualization                     │
 │  - Pattern management                │
@@ -490,13 +490,13 @@ if Code.ensure_loaded?(Waveform.PatternScheduler) do
 end
 ```
 
-### 2. KinoSpaetzle Integration
+### 2. KinoHarmony Integration
 
-[KinoSpaetzle](https://github.com/rpmessner/kino_spaetzle) is a Livebook live coding environment that uses both UzuParser and Waveform.
+[KinoHarmony](https://github.com/rpmessner/kino_harmony) is a Livebook live coding environment that uses both UzuParser and Waveform.
 
 **Current architecture** (speculated):
 ```
-KinoSpaetzle
+KinoHarmony
     ↓ (has own parser)
 Waveform.PatternScheduler
     ↓
@@ -505,7 +505,7 @@ SuperDirt
 
 **Future architecture** (recommended):
 ```
-KinoSpaetzle
+KinoHarmony
     ↓ (uses UzuParser)
 UzuParser
     ↓ (to_pattern helper)
@@ -539,4 +539,4 @@ end
 - **Waveform**: https://github.com/rpmessner/waveform
 - **SuperDirt**: https://github.com/musikinformatik/SuperDirt
 - **TidalCycles**: https://tidalcycles.org/
-- **KinoSpaetzle**: https://github.com/rpmessner/kino_spaetzle
+- **KinoHarmony**: https://github.com/rpmessner/kino_harmony

@@ -42,10 +42,21 @@ defmodule UzuParser do
       "bd [sd,hh] cp"     # chord on second beat
       "[bd:0,sd:1]"       # chord with sample selection
 
+  ### Random Removal (probability)
+  Question mark adds probability - events may or may not play:
+
+      "bd?"               # 50% chance to play
+      "bd?0.25"           # 25% chance to play
+      "bd sd? hh"         # only sd is probabilistic
+      "bd:0?0.75"         # sample selection + probability
+
+  Note: The parser stores the probability in the event's params.
+  The playback system (e.g., Waveform) decides whether to play the event.
+
   ## Future Features
   - Parameters: "bd|gain:0.8|speed:2"
-  - Random removal: "bd?" (probability)
   - Elongation: "bd@2" (temporal weight)
+  - Replication: "bd!3" (repeat without acceleration)
   - Euclidean rhythms: "bd(3,8)"
   - Pattern transformations: fast(), slow(), rev()
   """
@@ -147,6 +158,10 @@ defmodule UzuParser do
 
   defp parse_token(token) do
     cond do
+      # Handle probability: "bd?" or "bd?0.25" (must check before other operators)
+      String.contains?(token, "?") ->
+        parse_probability(token)
+
       # Handle repetition: "bd*4" or "bd:1*4"
       String.contains?(token, "*") ->
         parse_repetition(token)
@@ -157,25 +172,79 @@ defmodule UzuParser do
 
       # Simple sound
       true ->
-        {:sound, token, nil}
+        {:sound, token, nil, nil}
     end
   end
 
-  # Parse sample selection: "bd:0" -> {:sound, "bd", 0}
+  # Parse probability: "bd?" or "bd?0.25" or "bd:0?" -> {:sound, "bd", sample, probability}
+  defp parse_probability(token) do
+    case String.split(token, "?", parts: 2) do
+      [sound_part, ""] ->
+        # "bd?" - default 50% probability
+        base_token = parse_token_without_probability(sound_part)
+        add_probability_to_token(base_token, 0.5)
+
+      [sound_part, prob_str] ->
+        # "bd?0.25" - custom probability
+        case Float.parse(prob_str) do
+          {prob, ""} when prob >= 0.0 and prob <= 1.0 ->
+            base_token = parse_token_without_probability(sound_part)
+            add_probability_to_token(base_token, prob)
+
+          _ ->
+            # Invalid probability, treat as literal
+            {:sound, token, nil, nil}
+        end
+
+      _ ->
+        {:sound, token, nil, nil}
+    end
+  end
+
+  # Parse token without probability (used by parse_probability)
+  defp parse_token_without_probability(token) do
+    cond do
+      # Handle repetition: "bd*4" or "bd:1*4"
+      String.contains?(token, "*") ->
+        parse_repetition(token)
+
+      # Handle sample selection: "bd:0"
+      String.contains?(token, ":") ->
+        parse_sample_selection(token)
+
+      # Simple sound
+      true ->
+        {:sound, token, nil, nil}
+    end
+  end
+
+  # Add probability to a token (handles sound and repeat tokens)
+  defp add_probability_to_token({:sound, name, sample, _}, prob) do
+    {:sound, name, sample, prob}
+  end
+
+  defp add_probability_to_token({:repeat, sounds}, prob) do
+    # Apply probability to each sound in the repetition
+    {:repeat, Enum.map(sounds, &add_probability_to_token(&1, prob))}
+  end
+
+  defp add_probability_to_token(token, _prob), do: token
+
+  # Parse sample selection: "bd:0" -> {:sound, "bd", 0, nil}
   defp parse_sample_selection(token) do
     case String.split(token, ":") do
       [sound, sample_str] ->
         case Integer.parse(sample_str) do
           {sample, ""} when sample >= 0 ->
-            {:sound, sound, sample}
+            {:sound, sound, sample, nil}
 
           _ ->
             # Invalid sample number, treat as literal
-            {:sound, token, nil}
+            {:sound, token, nil, nil}
         end
 
       _ ->
-        {:sound, token, nil}
+        {:sound, token, nil, nil}
     end
   end
 
@@ -190,18 +259,18 @@ defmodule UzuParser do
               if String.contains?(sound_part, ":") do
                 parse_sample_selection(sound_part)
               else
-                {:sound, sound_part, nil}
+                {:sound, sound_part, nil, nil}
               end
 
             {:repeat, List.duplicate(sound_token, count)}
 
           _ ->
             # Invalid repetition, treat as literal
-            {:sound, token, nil}
+            {:sound, token, nil, nil}
         end
 
       _ ->
-        {:sound, token, nil}
+        {:sound, token, nil, nil}
     end
   end
 
@@ -252,14 +321,16 @@ defmodule UzuParser do
           :rest ->
             []
 
-          {:sound, sound, sample} ->
-            [Event.new(sound, time, duration: step_duration, sample: sample)]
+          {:sound, sound, sample, probability} ->
+            params = if probability, do: %{probability: probability}, else: %{}
+            [Event.new(sound, time, duration: step_duration, sample: sample, params: params)]
 
           {:chord, sounds} ->
             # Create multiple events at the same time for polyphony
             Enum.map(sounds, fn
-              {:sound, sound, sample} ->
-                Event.new(sound, time, duration: step_duration, sample: sample)
+              {:sound, sound, sample, probability} ->
+                params = if probability, do: %{probability: probability}, else: %{}
+                Event.new(sound, time, duration: step_duration, sample: sample, params: params)
 
               _ ->
                 nil
@@ -279,7 +350,7 @@ defmodule UzuParser do
   end
 
   defp flatten_token(:rest), do: [:rest]
-  defp flatten_token({:sound, _, _} = sound), do: [sound]
+  defp flatten_token({:sound, _, _, _} = sound), do: [sound]
   defp flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:chord, _sounds} = chord), do: [chord]

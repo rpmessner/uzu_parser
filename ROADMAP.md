@@ -13,6 +13,7 @@ This roadmap is based on features from [TidalCycles](https://tidalcycles.org/doc
 
 ### v0.2.0 (In Progress)
 - **Polyphony `,`** - Play multiple sounds simultaneously: `"[bd,sd,hh]"`
+- **Random Removal `?`** - Probabilistic events: `"bd?"` or `"bd?0.25"`
 
 ## 🎯 Phase 1: Essential Operators (Remaining for v0.2.0)
 
@@ -33,15 +34,6 @@ Repeat events without speeding up (like `*` but different timing).
 "[bd sd]!2"      # repeat pattern twice
 ```
 **Use case**: Pattern repetition, fill patterns
-
-### Random Removal `?`
-Randomly remove events with specified probability.
-```elixir
-"bd?"            # 50% chance to play
-"bd?0.25"        # 25% chance to play
-"bd sd? hh"      # only sd is probabilistic
-```
-**Use case**: Variation, humanization, sparse patterns
 
 ## 🚀 Phase 2: Pattern Selection (v0.3.0)
 

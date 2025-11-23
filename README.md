@@ -91,6 +91,19 @@ UzuParser.parse("bd [sd,hh] cp")  # chord on second beat
 UzuParser.parse("[bd:0,sd:1]")    # chord with sample selection
 ```
 
+### Random Removal (Probability)
+
+Question mark adds probability - events may or may not play:
+
+```elixir
+UzuParser.parse("bd?")            # 50% chance to play
+UzuParser.parse("bd?0.25")        # 25% chance to play
+UzuParser.parse("bd sd? hh")      # only sd is probabilistic
+UzuParser.parse("bd:0?0.75")      # sample selection + probability
+```
+
+The parser stores probability in the event's `params` field. The playback system decides whether to play each event based on this value.
+
 ### Complex Patterns
 
 Combine features for expressive patterns:
@@ -133,7 +146,6 @@ Each parsed event contains:
 
 ## Future Features
 
-- Random removal: `"bd?"` (probabilistic events)
 - Elongation: `"bd@2"` (temporal weight)
 - Replication: `"bd!3"` (repeat without acceleration)
 - Parameters: `"bd|gain:0.8|speed:2"`

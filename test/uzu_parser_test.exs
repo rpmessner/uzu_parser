@@ -388,6 +388,114 @@ defmodule UzuParserTest do
     end
   end
 
+  describe "random removal (probability)" do
+    test "parses sound with default probability" do
+      events = UzuParser.parse("bd?")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.params == %{probability: 0.5}
+    end
+
+    test "parses sound with custom probability" do
+      events = UzuParser.parse("bd?0.25")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.params == %{probability: 0.25}
+    end
+
+    test "parses sound with high probability" do
+      events = UzuParser.parse("bd?0.9")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.params == %{probability: 0.9}
+    end
+
+    test "parses mixed probabilistic and non-probabilistic sounds" do
+      events = UzuParser.parse("bd sd? hh")
+
+      assert length(events) == 3
+      assert Enum.at(events, 0).params == %{}
+      assert Enum.at(events, 1).params == %{probability: 0.5}
+      assert Enum.at(events, 2).params == %{}
+    end
+
+    test "parses probability with sample selection" do
+      events = UzuParser.parse("bd:0?")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.sample == 0
+      assert event.params == %{probability: 0.5}
+    end
+
+    test "parses probability with sample selection and custom value" do
+      events = UzuParser.parse("bd:1?0.75")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.sample == 1
+      assert event.params == %{probability: 0.75}
+    end
+
+    test "parses probability with repetition" do
+      events = UzuParser.parse("bd*3?")
+
+      assert length(events) == 3
+      # All three events should have probability
+      assert Enum.all?(events, &(&1.params == %{probability: 0.5}))
+      assert Enum.all?(events, &(&1.sound == "bd"))
+    end
+
+    test "parses probability in subdivisions" do
+      events = UzuParser.parse("bd [sd? hh]")
+
+      assert length(events) == 3
+      assert Enum.at(events, 0).params == %{}
+      assert Enum.at(events, 1).params == %{probability: 0.5}
+      assert Enum.at(events, 2).params == %{}
+    end
+
+    test "parses probability in chords" do
+      events = UzuParser.parse("[bd?,sd]")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 0).params == %{probability: 0.5}
+      assert Enum.at(events, 1).sound == "sd"
+      assert Enum.at(events, 1).params == %{}
+    end
+
+    test "handles invalid probability gracefully" do
+      # Invalid probability (negative or > 1) should be treated as literal
+      events = UzuParser.parse("bd?1.5")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd?1.5"
+      assert hd(events).params == %{}
+    end
+
+    test "handles probability 0.0" do
+      events = UzuParser.parse("bd?0.0")
+
+      assert length(events) == 1
+      assert hd(events).params == %{probability: 0.0}
+    end
+
+    test "handles probability 1.0" do
+      events = UzuParser.parse("bd?1.0")
+
+      assert length(events) == 1
+      assert hd(events).params == %{probability: 1.0}
+    end
+  end
+
   describe "event properties" do
     test "events have correct structure" do
       [event | _] = UzuParser.parse("bd")

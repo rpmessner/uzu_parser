@@ -69,6 +69,17 @@ UzuParser.parse("bd*4")      # equivalent to "bd bd bd bd"
 UzuParser.parse("bd*2 sd")   # two kicks, one snare
 ```
 
+### Sample Selection
+
+Colon selects different samples/variations:
+
+```elixir
+UzuParser.parse("bd:0")         # kick drum, sample 0
+UzuParser.parse("bd:1 bd:2")    # different kick drum samples
+UzuParser.parse("bd:0*4")       # repeat sample 0 four times
+UzuParser.parse("bd:0 sd:1 hh:2")  # each sound uses a different sample
+```
+
 ### Complex Patterns
 
 Combine features for expressive patterns:
@@ -89,6 +100,7 @@ UzuParser.parse("[bd ~ sd ~] hh")
 Each parsed event contains:
 
 - `sound` - The sound/sample name (string)
+- `sample` - Sample number (integer >= 0, or nil for default)
 - `time` - Position in the cycle (0.0 to 1.0)
 - `duration` - How long the event lasts (0.0 to 1.0)
 - `params` - Additional parameters (map, for future extensions)
@@ -96,6 +108,7 @@ Each parsed event contains:
 ```elixir
 %UzuParser.Event{
   sound: "bd",
+  sample: 0,
   time: 0.0,
   duration: 0.25,
   params: %{}
@@ -109,7 +122,6 @@ Each parsed event contains:
 
 ## Future Features
 
-- Sample selection: `"bd:0"`, `"bd:1"`
 - Parameters: `"bd|gain:0.8|speed:2"`
 - Polyphony: `"[bd,sd]"` (multiple sounds at once)
 - Euclidean rhythms: `"bd(3,8)"` (3 hits in 8 steps)
@@ -130,7 +142,7 @@ mix format
 
 ## License
 
-Apache 2.0 License - See LICENSE for details
+MIT License - See LICENSE for details
 
 ## Credits
 

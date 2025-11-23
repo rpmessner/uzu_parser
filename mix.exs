@@ -42,7 +42,7 @@ defmodule UzuParser.MixProject do
     [
       name: "uzu_parser",
       files: ~w(lib .formatter.exs mix.exs README.md LICENSE),
-      licenses: ["Apache-2.0"],
+      licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url
       }

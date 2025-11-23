@@ -14,18 +14,11 @@ This roadmap is based on features from [TidalCycles](https://tidalcycles.org/doc
 ### v0.2.0 (In Progress)
 - **Polyphony `,`** - Play multiple sounds simultaneously: `"[bd,sd,hh]"`
 - **Random Removal `?`** - Probabilistic events: `"bd?"` or `"bd?0.25"`
+- **Elongation `@`** - Temporal weight: `"bd@2 sd"` (proportional durations)
 
 ## 🎯 Phase 1: Essential Operators (Remaining for v0.2.0)
 
 Priority: High - Core pattern manipulation features
-
-### Elongation `@`
-Specify temporal weight/duration of events.
-```elixir
-"bd@2 sd"        # kick twice as long as snare
-"[bd sd@3 hh]"   # snare 3x longer than others
-```
-**Use case**: Accents, sustained notes, uneven rhythm emphasis
 
 ### Replication `!`
 Repeat events without speeding up (like `*` but different timing).

@@ -496,6 +496,112 @@ defmodule UzuParserTest do
     end
   end
 
+  describe "elongation (temporal weight)" do
+    test "parses sound with weight" do
+      events = UzuParser.parse("bd@2 sd")
+
+      assert length(events) == 2
+      # bd has weight 2, sd has weight 1 (default), total 3
+      # bd should be 2/3 = 0.666..., sd should be 1/3 = 0.333...
+      assert Enum.at(events, 0).sound == "bd"
+      assert_in_delta Enum.at(events, 0).duration, 0.666, 0.01
+      assert Enum.at(events, 1).sound == "sd"
+      assert_in_delta Enum.at(events, 1).duration, 0.333, 0.01
+    end
+
+    test "parses multiple weighted sounds" do
+      events = UzuParser.parse("bd@2 sd@1 hh@1")
+
+      assert length(events) == 3
+      # Total weight: 4, so bd=2/4=0.5, sd=1/4=0.25, hh=1/4=0.25
+      assert_in_delta Enum.at(events, 0).duration, 0.5, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.25, 0.01
+      assert_in_delta Enum.at(events, 2).duration, 0.25, 0.01
+    end
+
+    test "parses weight in subdivision" do
+      events = UzuParser.parse("[bd sd@3 hh]")
+
+      assert length(events) == 3
+      # Total weight: 5 (1+3+1), so bd=1/5=0.2, sd=3/5=0.6, hh=1/5=0.2
+      assert_in_delta Enum.at(events, 0).duration, 0.2, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.6, 0.01
+      assert_in_delta Enum.at(events, 2).duration, 0.2, 0.01
+    end
+
+    test "parses weight with sample selection" do
+      events = UzuParser.parse("bd:0@2")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.sample == 0
+      assert event.duration == 1.0
+    end
+
+    test "parses weight with float values" do
+      events = UzuParser.parse("bd@1.5 sd")
+
+      assert length(events) == 2
+      # Total weight: 2.5, so bd=1.5/2.5=0.6, sd=1/2.5=0.4
+      assert_in_delta Enum.at(events, 0).duration, 0.6, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.4, 0.01
+    end
+
+    test "calculates correct timings with weights" do
+      events = UzuParser.parse("bd@2 sd")
+
+      # bd starts at 0.0 and lasts 2/3
+      assert Enum.at(events, 0).time == 0.0
+      assert_in_delta Enum.at(events, 0).duration, 0.666, 0.01
+
+      # sd starts at 2/3 and lasts 1/3
+      assert_in_delta Enum.at(events, 1).time, 0.666, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.333, 0.01
+    end
+
+    test "parses weight with probability" do
+      events = UzuParser.parse("bd@2?0.5")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.duration == 1.0
+      assert event.params == %{probability: 0.5}
+    end
+
+    test "handles weight with rests" do
+      events = UzuParser.parse("bd@2 ~ sd")
+
+      # bd weight 2, rest weight 1, sd weight 1, total 4
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert_in_delta Enum.at(events, 0).duration, 0.5, 0.01
+      assert Enum.at(events, 1).sound == "sd"
+      assert_in_delta Enum.at(events, 1).duration, 0.25, 0.01
+    end
+
+    test "handles invalid weight gracefully" do
+      # Invalid weight (negative or zero) should be treated as literal
+      events = UzuParser.parse("bd@0")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd@0"
+    end
+
+    test "handles weight with chords" do
+      events = UzuParser.parse("[bd@2,sd]")
+
+      # Chord itself has weight 1 by default
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 1).sound == "sd"
+      # Both events in chord should have same time and duration
+      assert Enum.at(events, 0).time == Enum.at(events, 1).time
+      assert Enum.at(events, 0).duration == Enum.at(events, 1).duration
+    end
+  end
+
   describe "event properties" do
     test "events have correct structure" do
       [event | _] = UzuParser.parse("bd")

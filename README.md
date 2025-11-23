@@ -104,6 +104,18 @@ UzuParser.parse("bd:0?0.75")      # sample selection + probability
 
 The parser stores probability in the event's `params` field. The playback system decides whether to play each event based on this value.
 
+### Elongation (Temporal Weight)
+
+At sign specifies relative duration/weight of events:
+
+```elixir
+UzuParser.parse("bd@2 sd")        # kick twice as long as snare (2/3 vs 1/3)
+UzuParser.parse("[bd sd@3 hh]")   # snare 3x longer than bd and hh
+UzuParser.parse("bd@1.5 sd")      # fractional weights supported
+```
+
+Events are assigned time and duration proportionally based on their weights. Default weight is 1.0 if not specified.
+
 ### Complex Patterns
 
 Combine features for expressive patterns:
@@ -146,7 +158,6 @@ Each parsed event contains:
 
 ## Future Features
 
-- Elongation: `"bd@2"` (temporal weight)
 - Replication: `"bd!3"` (repeat without acceleration)
 - Parameters: `"bd|gain:0.8|speed:2"`
 - Euclidean rhythms: `"bd(3,8)"` (3 hits in 8 steps)

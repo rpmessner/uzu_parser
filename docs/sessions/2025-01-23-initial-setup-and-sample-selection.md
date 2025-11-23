@@ -8,6 +8,30 @@
 
 This session established the project infrastructure and implemented the first new feature (sample selection) for UzuParser, an Elixir-based pattern mini-notation parser for live coding music.
 
+**Project Context**: UzuParser was **extracted from KinoSpaetzle** to be a standalone, reusable library. This allows:
+- **UzuParser** (this project): Focus purely on parsing mini-notation
+- **KinoSpaetzle**: Use UzuParser for parsing while focusing on UI and visualization
+- **Waveform**: Handle audio scheduling and SuperDirt integration
+
+The design was validated against Waveform's `PatternScheduler` and `SuperDirt` modules to ensure seamless integration.
+
+## Context & Motivation
+
+**UzuParser** was extracted from [KinoSpaetzle](https://github.com/rpmessner/kino_spaetzle), a TidalCycles-inspired live coding environment for Livebook.
+
+**Extraction Rationale**:
+- **Separation of concerns**: Parser logic separate from UI/visualization
+- **Reusability**: Other projects (discord_uzu, future tools) can use the parser
+- **Maintainability**: Easier to test, develop, and document
+- **Integration**: Works seamlessly with [Waveform](https://github.com/rpmessner/waveform) for audio scheduling
+
+**Ecosystem**:
+```
+KinoSpaetzle (Livebook UI) ─┐
+                            ├─→ UzuParser ─→ Waveform ─→ SuperDirt ─→ Audio
+discord_uzu (Discord bot) ──┘
+```
+
 ## Accomplishments
 
 ### 1. Infrastructure Setup ✅
@@ -85,6 +109,26 @@ Created comprehensive `ROADMAP.md` based on:
 - [Strudel mini-notation](https://strudel.cc/learn/mini-notation/)
 
 Identified 15+ features organized into 5 phases.
+
+### 4. Waveform Integration Analysis ✅
+
+Analyzed [Waveform](https://github.com/rpmessner/waveform) (v0.3.0) to ensure UzuParser design is compatible with the downstream orchestration layer.
+
+**Key Findings**:
+- **PatternScheduler** expects: `[{cycle_position, params}, ...]` tuples
+- **SuperDirt parameters** map perfectly to Event struct design
+- **Event.sound** → SuperDirt `s:` parameter (sample name)
+- **Event.sample** → SuperDirt `n:` parameter (sample number)
+- **Event.time** → PatternScheduler cycle_position (0.0-1.0)
+- **Event.params** → Additional SuperDirt params (gain, speed, pan, effects)
+
+**Design Validation**: The Event struct created in this session is **perfectly designed** for Waveform integration. No changes needed!
+
+Created `docs/WAVEFORM_INTEGRATION.md` with:
+- Complete integration guide
+- Helper functions for conversion
+- Usage examples with Livebook
+- Parameter mapping reference
 
 ## Current Project State
 
@@ -363,6 +407,7 @@ ROADMAP.md                                                  # Created - Feature 
 docs/sessions/2025-01-23-initial-setup-and-sample-selection.md  # Created - This document
 docs/NEXT_STEPS.md                                          # Created - Quick reference guide
 docs/PERFORMANCE.md                                         # Created - Performance analysis
+docs/WAVEFORM_INTEGRATION.md                                # Created - Waveform integration guide
 ```
 
 ## Quick Start for Next Session
@@ -590,18 +635,20 @@ Benchee.run(%{
 
 ## Session Metrics
 
-- **Duration**: ~2 hours
-- **Files created**: 5 (CI workflow, ROADMAP, 3 docs)
+- **Duration**: ~2.5 hours
+- **Files created**: 6 (CI workflow, ROADMAP, 4 docs)
 - **Files modified**: 6 (LICENSE, mix.exs, README, parser, event, tests)
 - **Tests added**: 7
 - **Tests total**: 30
 - **Lines of code added**: ~200
-- **Lines of documentation added**: ~800
+- **Lines of documentation added**: ~1400
 - **Features completed**: 2 (CI + sample selection)
 - **Features researched & planned**: 15+
 - **Performance issues identified**: 2 (1 critical, 1 future)
+- **Integration validation**: Waveform compatibility confirmed
 - **Documentation artifacts created**:
   - Session notes (this file)
   - Quick reference guide (NEXT_STEPS.md)
   - Performance analysis (PERFORMANCE.md)
   - Feature roadmap (ROADMAP.md)
+  - Waveform integration guide (WAVEFORM_INTEGRATION.md)

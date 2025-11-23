@@ -201,6 +201,66 @@ defmodule UzuParserTest do
     end
   end
 
+  describe "sample selection" do
+    test "parses simple sample selection" do
+      events = UzuParser.parse("bd:0 sd:1 hh:2")
+
+      assert length(events) == 3
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 0).sample == 0
+
+      assert Enum.at(events, 1).sound == "sd"
+      assert Enum.at(events, 1).sample == 1
+
+      assert Enum.at(events, 2).sound == "hh"
+      assert Enum.at(events, 2).sample == 2
+    end
+
+    test "parses mixed samples and non-samples" do
+      events = UzuParser.parse("bd:1 sd hh:0")
+
+      assert length(events) == 3
+      assert Enum.at(events, 0).sample == 1
+      assert Enum.at(events, 1).sample == nil
+      assert Enum.at(events, 2).sample == 0
+    end
+
+    test "parses sample selection with repetition" do
+      events = UzuParser.parse("bd:1*3")
+
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.sound == "bd"))
+      assert Enum.all?(events, &(&1.sample == 1))
+    end
+
+    test "parses sample selection in subdivisions" do
+      events = UzuParser.parse("[bd:0 sd:1]")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 0).sample == 0
+      assert Enum.at(events, 1).sound == "sd"
+      assert Enum.at(events, 1).sample == 1
+    end
+
+    test "handles invalid sample numbers gracefully" do
+      events = UzuParser.parse("bd:abc")
+
+      assert length(events) == 1
+      # Invalid sample number should be treated as part of sound name
+      assert hd(events).sound == "bd:abc"
+      assert hd(events).sample == nil
+    end
+
+    test "handles negative sample numbers gracefully" do
+      events = UzuParser.parse("bd:-1")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd:-1"
+      assert hd(events).sample == nil
+    end
+  end
+
   describe "event properties" do
     test "events have correct structure" do
       [event | _] = UzuParser.parse("bd")
@@ -227,6 +287,11 @@ defmodule UzuParserTest do
         assert event.time >= 0.0
         assert event.time < 1.0
       end)
+    end
+
+    test "sample field is present" do
+      [event | _] = UzuParser.parse("bd")
+      assert Map.has_key?(event, :sample)
     end
   end
 end

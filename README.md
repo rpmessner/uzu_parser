@@ -80,6 +80,17 @@ UzuParser.parse("bd:0*4")       # repeat sample 0 four times
 UzuParser.parse("bd:0 sd:1 hh:2")  # each sound uses a different sample
 ```
 
+### Polyphony (Chords)
+
+Comma within brackets plays multiple sounds simultaneously:
+
+```elixir
+UzuParser.parse("[bd,sd]")        # kick and snare together
+UzuParser.parse("[bd,sd,hh]")     # three sounds at once
+UzuParser.parse("bd [sd,hh] cp")  # chord on second beat
+UzuParser.parse("[bd:0,sd:1]")    # chord with sample selection
+```
+
 ### Complex Patterns
 
 Combine features for expressive patterns:
@@ -122,8 +133,10 @@ Each parsed event contains:
 
 ## Future Features
 
+- Random removal: `"bd?"` (probabilistic events)
+- Elongation: `"bd@2"` (temporal weight)
+- Replication: `"bd!3"` (repeat without acceleration)
 - Parameters: `"bd|gain:0.8|speed:2"`
-- Polyphony: `"[bd,sd]"` (multiple sounds at once)
 - Euclidean rhythms: `"bd(3,8)"` (3 hits in 8 steps)
 - Pattern transformations: `fast()`, `slow()`, `rev()`
 

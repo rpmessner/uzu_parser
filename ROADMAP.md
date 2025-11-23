@@ -2,26 +2,21 @@
 
 This roadmap is based on features from [TidalCycles](https://tidalcycles.org/docs/reference/mini_notation/) and [Strudel](https://strudel.cc/learn/mini-notation/).
 
-## ✅ Implemented (v0.1.0)
+## ✅ Implemented
 
+### v0.1.0
 - **Basic sequences** - Space-separated sounds: `"bd sd hh sd"`
 - **Rests** - Silence with `~`: `"bd ~ sd ~"`
 - **Subdivisions** - Brackets for faster divisions: `"bd [sd sd] hh"`
 - **Repetition** - Multiply with `*`: `"bd*4"`
 - **Sample selection** - Choose samples with `:`: `"bd:0 sd:1"`
 
-## 🎯 Phase 1: Essential Operators (v0.2.0)
+### v0.2.0 (In Progress)
+- **Polyphony `,`** - Play multiple sounds simultaneously: `"[bd,sd,hh]"`
+
+## 🎯 Phase 1: Essential Operators (Remaining for v0.2.0)
 
 Priority: High - Core pattern manipulation features
-
-### Polyphony `,`
-Play multiple sounds simultaneously at the same time.
-```elixir
-"[bd,sd]"        # kick and snare together
-"[bd,sd,hh]"     # three sounds at once
-"bd [sd,hh]"     # chord on second beat
-```
-**Use case**: Chords, layered percussion, harmonic patterns
 
 ### Elongation `@`
 Specify temporal weight/duration of events.

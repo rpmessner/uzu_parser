@@ -34,9 +34,18 @@ defmodule UzuParser do
       "bd:1 bd:2"    # different kick drum samples
       "bd:0*4"       # repeat sample 0 four times
 
+  ### Polyphony (chords)
+  Comma within brackets plays multiple sounds simultaneously:
+
+      "[bd,sd]"           # kick and snare together
+      "[bd,sd,hh]"        # three sounds at once
+      "bd [sd,hh] cp"     # chord on second beat
+      "[bd:0,sd:1]"       # chord with sample selection
+
   ## Future Features
-  - Parameters: "bd*0.8" (volume), "bd|speed:2"
-  - Polyphony: "bd,sd" (sounds together)
+  - Parameters: "bd|gain:0.8|speed:2"
+  - Random removal: "bd?" (probability)
+  - Elongation: "bd@2" (temporal weight)
   - Euclidean rhythms: "bd(3,8)"
   - Pattern transformations: fast(), slow(), rev()
   """
@@ -197,13 +206,30 @@ defmodule UzuParser do
   end
 
   # Parse subdivision: "bd sd" -> {:subdivision, [{:sound, "bd"}, {:sound, "sd"}]}
+  # Or polyphony: "bd,sd" -> {:subdivision, [{:chord, [{:sound, "bd"}, {:sound, "sd"}]}]}
   defp parse_subdivision(inner) do
-    subtokens =
-      inner
-      |> tokenize()
-      |> Enum.reject(&is_nil/1)
+    # Check if this subdivision contains polyphony (comma-separated)
+    if String.contains?(inner, ",") do
+      # Parse as a chord - flatten any repetitions so we get individual sounds
+      sounds =
+        inner
+        |> String.split(",")
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.map(&parse_token/1)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.flat_map(&flatten_token/1)
 
-    {:subdivision, subtokens}
+      {:subdivision, [{:chord, sounds}]}
+    else
+      # Parse as regular subdivision
+      subtokens =
+        inner
+        |> tokenize()
+        |> Enum.reject(&is_nil/1)
+
+      {:subdivision, subtokens}
+    end
   end
 
   # Calculate actual timing for events
@@ -229,6 +255,17 @@ defmodule UzuParser do
           {:sound, sound, sample} ->
             [Event.new(sound, time, duration: step_duration, sample: sample)]
 
+          {:chord, sounds} ->
+            # Create multiple events at the same time for polyphony
+            Enum.map(sounds, fn
+              {:sound, sound, sample} ->
+                Event.new(sound, time, duration: step_duration, sample: sample)
+
+              _ ->
+                nil
+            end)
+            |> Enum.reject(&is_nil/1)
+
           _ ->
             []
         end
@@ -245,4 +282,5 @@ defmodule UzuParser do
   defp flatten_token({:sound, _, _} = sound), do: [sound]
   defp flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
+  defp flatten_token({:chord, _sounds} = chord), do: [chord]
 end

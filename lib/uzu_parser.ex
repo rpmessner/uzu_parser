@@ -99,7 +99,7 @@ defmodule UzuParser do
         do: [parse_token(String.trim(current)) | acc],
         else: acc
 
-    {subdivision, remaining} = collect_until_bracket_close(rest, "")
+    {subdivision, remaining} = collect_until_bracket_close(rest, [])
     tokenize_recursive(remaining, [parse_subdivision(subdivision) | acc], "")
   end
 
@@ -118,14 +118,19 @@ defmodule UzuParser do
   end
 
   # Collect everything until the closing bracket
-  defp collect_until_bracket_close("]" <> rest, acc), do: {acc, rest}
+  # Uses iolist accumulator for O(n) performance instead of O(n²) string concatenation
+  defp collect_until_bracket_close("]" <> rest, acc) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), rest}
+  end
 
   defp collect_until_bracket_close(<<char::utf8, rest::binary>>, acc) do
-    collect_until_bracket_close(rest, acc <> <<char::utf8>>)
+    collect_until_bracket_close(rest, [<<char::utf8>> | acc])
   end
 
   # Handle unclosed bracket
-  defp collect_until_bracket_close("", acc), do: {acc, ""}
+  defp collect_until_bracket_close("", acc) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), ""}
+  end
 
   # Parse individual token
   defp parse_token(""), do: nil

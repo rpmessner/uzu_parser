@@ -199,6 +199,24 @@ defmodule UzuParserTest do
       # Total of 8 steps, 6 events
       assert length(events) == 6
     end
+
+    test "parses multiple sequential subdivisions efficiently" do
+      # This tests the performance fix - multiple subdivisions should parse quickly
+      events = UzuParser.parse("bd [sd hh] cp [oh ch]")
+
+      assert length(events) == 6
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "hh", "cp", "oh", "ch"]
+    end
+
+    test "parses long subdivision content efficiently" do
+      # Tests performance fix with long strings inside brackets
+      long_pattern = "bd [" <> String.duplicate("hh ", 50) <> "]"
+      events = UzuParser.parse(long_pattern)
+
+      assert length(events) == 51
+      assert hd(events).sound == "bd"
+      assert Enum.drop(events, 1) |> Enum.all?(&(&1.sound == "hh"))
+    end
   end
 
   describe "sample selection" do

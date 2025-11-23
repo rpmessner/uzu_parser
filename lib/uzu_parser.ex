@@ -5,7 +5,7 @@ defmodule UzuParser do
   The parser converts text-based pattern notation into structured event data
   that can be scheduled and played back.
 
-  ## Supported Syntax (MVP)
+  ## Supported Syntax
 
   ### Basic Sequences
   Space-separated sounds are evenly distributed across one cycle:
@@ -27,8 +27,14 @@ defmodule UzuParser do
 
       "bd*4"         # equivalent to "bd bd bd bd"
 
+  ### Sample Selection
+  Colon selects different samples/variations:
+
+      "bd:0"         # kick drum, sample 0
+      "bd:1 bd:2"    # different kick drum samples
+      "bd:0*4"       # repeat sample 0 four times
+
   ## Future Features
-  - Sample selection: "bd:0", "bd:1"
   - Parameters: "bd*0.8" (volume), "bd|speed:2"
   - Polyphony: "bd,sd" (sounds together)
   - Euclidean rhythms: "bd(3,8)"
@@ -47,16 +53,22 @@ defmodule UzuParser do
 
       iex> UzuParser.parse("bd sd hh sd")
       [
-        %Event{sound: "bd", time: 0.0, duration: 0.25},
-        %Event{sound: "sd", time: 0.25, duration: 0.25},
-        %Event{sound: "hh", time: 0.5, duration: 0.25},
-        %Event{sound: "sd", time: 0.75, duration: 0.25}
+        %Event{sound: "bd", sample: nil, time: 0.0, duration: 0.25},
+        %Event{sound: "sd", sample: nil, time: 0.25, duration: 0.25},
+        %Event{sound: "hh", sample: nil, time: 0.5, duration: 0.25},
+        %Event{sound: "sd", sample: nil, time: 0.75, duration: 0.25}
       ]
 
       iex> UzuParser.parse("bd ~ sd ~")
       [
-        %Event{sound: "bd", time: 0.0, duration: 0.25},
-        %Event{sound: "sd", time: 0.5, duration: 0.25}
+        %Event{sound: "bd", sample: nil, time: 0.0, duration: 0.25},
+        %Event{sound: "sd", sample: nil, time: 0.5, duration: 0.25}
+      ]
+
+      iex> UzuParser.parse("bd:0 sd:1")
+      [
+        %Event{sound: "bd", sample: 0, time: 0.0, duration: 0.5},
+        %Event{sound: "sd", sample: 1, time: 0.5, duration: 0.5}
       ]
   """
   def parse(pattern_string) when is_binary(pattern_string) do
@@ -121,31 +133,61 @@ defmodule UzuParser do
 
   defp parse_token(token) do
     cond do
-      # Handle repetition: "bd*4"
+      # Handle repetition: "bd*4" or "bd:1*4"
       String.contains?(token, "*") ->
         parse_repetition(token)
 
+      # Handle sample selection: "bd:0"
+      String.contains?(token, ":") ->
+        parse_sample_selection(token)
+
       # Simple sound
       true ->
-        {:sound, token}
+        {:sound, token, nil}
     end
   end
 
-  # Parse repetition: "bd*4" -> [{:sound, "bd"}, {:sound, "bd"}, {:sound, "bd"}, {:sound, "bd"}]
-  defp parse_repetition(token) do
-    case String.split(token, "*") do
-      [sound, count_str] ->
-        case Integer.parse(count_str) do
-          {count, ""} when count > 0 ->
-            {:repeat, List.duplicate({:sound, sound}, count)}
+  # Parse sample selection: "bd:0" -> {:sound, "bd", 0}
+  defp parse_sample_selection(token) do
+    case String.split(token, ":") do
+      [sound, sample_str] ->
+        case Integer.parse(sample_str) do
+          {sample, ""} when sample >= 0 ->
+            {:sound, sound, sample}
 
           _ ->
-            # Invalid repetition, treat as literal
-            {:sound, token}
+            # Invalid sample number, treat as literal
+            {:sound, token, nil}
         end
 
       _ ->
-        {:sound, token}
+        {:sound, token, nil}
+    end
+  end
+
+  # Parse repetition: "bd*4" or "bd:1*4" -> repeated sound tokens
+  defp parse_repetition(token) do
+    case String.split(token, "*") do
+      [sound_part, count_str] ->
+        case Integer.parse(count_str) do
+          {count, ""} when count > 0 ->
+            # Parse the sound part (which might have sample selection)
+            sound_token =
+              if String.contains?(sound_part, ":") do
+                parse_sample_selection(sound_part)
+              else
+                {:sound, sound_part, nil}
+              end
+
+            {:repeat, List.duplicate(sound_token, count)}
+
+          _ ->
+            # Invalid repetition, treat as literal
+            {:sound, token, nil}
+        end
+
+      _ ->
+        {:sound, token, nil}
     end
   end
 
@@ -176,9 +218,14 @@ defmodule UzuParser do
         time = index * step_duration
 
         case token do
-          :rest -> []
-          {:sound, sound} -> [Event.new(sound, time, duration: step_duration)]
-          _ -> []
+          :rest ->
+            []
+
+          {:sound, sound, sample} ->
+            [Event.new(sound, time, duration: step_duration, sample: sample)]
+
+          _ ->
+            []
         end
       end)
     end
@@ -190,7 +237,7 @@ defmodule UzuParser do
   end
 
   defp flatten_token(:rest), do: [:rest]
-  defp flatten_token({:sound, _} = sound), do: [sound]
+  defp flatten_token({:sound, _, _} = sound), do: [sound]
   defp flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
 end

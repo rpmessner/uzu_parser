@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-11-25
+
+### Added
+- **Random Choice (`|`)** - Randomly select one option per evaluation: `"bd|sd|hh"`
+- **Alternation (`<>`)** - Cycle through options sequentially: `"<bd sd hh>"`
+- Parser stores options in event params for playback system to resolve
+- Comprehensive test suite expanded to 84 tests
+
+### Changed
+- Extended Event params to support `random_choice` and `alternate` option lists
+- Added angle bracket parsing for alternation syntax
+
 ## [0.2.0] - 2025-01-23
 
 ### Added
@@ -48,5 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Subdivisions: `"bd [sd sd] hh"`
 - Repetition: `"bd*4"`
 
+[0.3.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.3.0
 [0.2.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.2.0
 [0.1.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.1.0

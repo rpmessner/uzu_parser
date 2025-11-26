@@ -2,6 +2,60 @@
 
 This roadmap is based on features from [TidalCycles](https://tidalcycles.org/docs/reference/mini_notation/) and [Strudel](https://strudel.cc/learn/mini-notation/).
 
+---
+
+## Architectural Role
+
+**UzuParser is the "pattern brain" of the Elixir music ecosystem.**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Client Applications                       │
+│  kino_harmony (Livebook) │ harmony.nvim (Neovim) │ discord_uzu  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+              ┌─────────────────────────┐
+              │     HarmonyServer       │
+              │    (API Gateway)        │
+              │  - RPC for non-Elixir   │
+              │  - Scheduling           │
+              │  - delegates to ↓       │
+              └───────────┬─────────────┘
+                          │
+        ┌─────────────────┼─────────────────┐
+        ▼                 ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  UzuParser   │  │   harmony    │  │   waveform   │
+│  (patterns)  │  │   (theory)   │  │   (audio)    │
+│              │  │              │  │              │
+│ • parse      │  │ • chords     │  │ • OSC        │
+│ • fast/slow  │  │ • scales     │  │ • SuperDirt  │
+│ • stack/cat  │  │ • voicings   │  │ • MIDI       │
+│ • every/when │  │ • intervals  │  │ • scheduling │
+│ • rev/jux    │  │              │  │              │
+└──────────────┘  └──────────────┘  └──────────────┘
+```
+
+**Responsibilities:**
+- **Parsing**: Convert mini-notation strings → `[%Event{}]` lists
+- **Transformations**: `fast`, `slow`, `rev`, `stack`, `cat`, `every`, `when`, `jux`, `degrade_by`
+- **Pattern algebra**: Combining, sequencing, layering patterns
+
+**NOT responsible for:**
+- Scheduling/timing (→ waveform)
+- Audio output (→ waveform)
+- Music theory (→ harmony)
+- RPC/remote access (→ HarmonyServer)
+
+**Why transformations live here:**
+- Transformations are pure functions on event lists
+- No scheduling, timing, or audio concerns
+- Reusable by any Elixir project without HarmonyServer
+- Follows Tidal/Strudel model where Pattern type owns transformations
+
+---
+
 ## ✅ Implemented
 
 ### v0.1.0
@@ -18,27 +72,11 @@ This roadmap is based on features from [TidalCycles](https://tidalcycles.org/doc
 - **Elongation `@`** - Temporal weight: `"bd@2 sd"` (proportional durations)
 - **Replication `!`** - Repeat events: `"bd!3"` (alternative to `*`)
 
-## 🎯 Phase 1: Complete! 🎊
+### v0.3.0 ✅ Complete
+- **Random Choice `|`** - Randomly select one option: `"bd|sd|hh"`
+- **Alternation `<>`** - Cycle through options: `"<bd sd hh>"`
 
-## 🚀 Phase 2: Pattern Selection (v0.3.0)
-
-Priority: High - Add variety and dynamic patterns
-
-### Random Choice `|`
-Randomly select one option per cycle.
-```elixir
-"bd|sd|hh"       # pick one each cycle
-"[bd|cp] sd"     # randomize first beat
-```
-**Use case**: Variation, generative patterns
-
-### Alternation `<>`
-Cycle through options sequentially.
-```elixir
-"<bd sd hh>"     # bd on cycle 1, sd on 2, hh on 3
-"<bd sd> hh"     # alternate kick pattern
-```
-**Use case**: Structured variation, verse/chorus changes
+## 🎯 Phase 1 & 2: Complete! 🎊
 
 ## 🎼 Phase 3: Advanced Rhythms (v0.4.0)
 
@@ -91,7 +129,53 @@ Add parameters to sounds for manipulation.
 
 **Use case**: Sound design, dynamics, mixing
 
-## 🔮 Phase 5: Advanced Features (v0.6.0+)
+## 🔄 Phase 5: Pattern Transformations (v0.5.0)
+
+Priority: **HIGH** - Core pattern manipulation for kino_harmony integration
+
+### Temporal Transformations
+```elixir
+UzuParser.fast(events, 2.0)    # Speed up by factor (compress time)
+UzuParser.slow(events, 2.0)    # Slow down by factor (expand time)
+UzuParser.rev(events)          # Reverse pattern order and timing
+```
+**Implementation**: Transform `time` field of `%Event{}` structs
+
+### Pattern Combinators
+```elixir
+UzuParser.stack([pattern1, pattern2])  # Play simultaneously (merge events)
+UzuParser.cat([pattern1, pattern2])    # Play sequentially (offset timing)
+```
+**Implementation**: Combine event lists with appropriate timing adjustments
+
+### Conditional Transformations
+```elixir
+UzuParser.every(events, 3, &UzuParser.rev/1)  # Apply every N cycles
+UzuParser.when_(events, fn cycle -> rem(cycle, 2) == 0 end, &fast(&1, 2))
+```
+**Note**: `when_` because `when` is reserved in Elixir
+
+### Parameterized Transformations
+```elixir
+UzuParser.jux(events, &UzuParser.rev/1)   # Left: original, Right: transformed
+UzuParser.degrade_by(events, 0.5)         # Randomly remove ~50% of events
+UzuParser.degrade_by(events, 0.5, seed: 42)  # Deterministic for testing
+```
+
+### Implementation Notes
+- All transformations operate on `[%UzuParser.Event{}]` lists
+- Transform `time` field (0.0-1.0 cycle position)
+- Preserve all event params during transformation
+- Pure functions - no side effects, no scheduling
+
+### Testing Strategy
+- Unit tests for each transformation
+- Property-based tests with StreamData
+- Edge cases: empty lists, single events, boundary conditions
+
+---
+
+## 🔮 Phase 6: Advanced Features (v0.6.0+)
 
 Priority: Low - Nice-to-have enhancements
 

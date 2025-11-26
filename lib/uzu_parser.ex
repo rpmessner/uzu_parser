@@ -73,6 +73,24 @@ defmodule UzuParser do
   Note: In this parser, `!` and `*` produce identical results. Both create
   separate steps rather than subdividing time.
 
+  ### Random Choice (pipe)
+  Pipe randomly selects one option per evaluation:
+
+      "bd|sd|hh"          # pick one each time
+      "[bd|cp] sd"        # randomize first beat
+
+  Note: The parser stores all options and the playback system makes
+  the random selection. Use `:rand.uniform()` or similar for selection.
+
+  ### Alternation (angle brackets)
+  Angle brackets cycle through options sequentially:
+
+      "<bd sd hh>"        # bd on cycle 1, sd on 2, hh on 3, then repeats
+      "<bd sd> hh"        # alternate kick pattern
+
+  Note: The parser stores the options with an `:alternate` type.
+  The playback system uses the cycle number to select which option to play.
+
   ## Future Features
   - Parameters: "bd|gain:0.8|speed:2"
   - Euclidean rhythms: "bd(3,8)"
@@ -141,6 +159,17 @@ defmodule UzuParser do
     tokenize_recursive(remaining, [parse_subdivision(subdivision) | acc], "")
   end
 
+  defp tokenize_recursive("<" <> rest, acc, current) do
+    # Start of alternation - save current token if any, then collect until >
+    acc =
+      if current != "" and String.trim(current) != "",
+        do: [parse_token(String.trim(current)) | acc],
+        else: acc
+
+    {alternation, remaining} = collect_until_angle_close(rest, [])
+    tokenize_recursive(remaining, [parse_alternation(alternation) | acc], "")
+  end
+
   defp tokenize_recursive(<<char::utf8, rest::binary>>, acc, current) do
     if String.match?(<<char::utf8>>, ~r/\s/) do
       # Whitespace - end current token
@@ -170,6 +199,21 @@ defmodule UzuParser do
     {IO.iodata_to_binary(Enum.reverse(acc)), ""}
   end
 
+  # Collect everything until the closing angle bracket
+  # Uses iolist accumulator for O(n) performance
+  defp collect_until_angle_close(">" <> rest, acc) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), rest}
+  end
+
+  defp collect_until_angle_close(<<char::utf8, rest::binary>>, acc) do
+    collect_until_angle_close(rest, [<<char::utf8>> | acc])
+  end
+
+  # Handle unclosed angle bracket
+  defp collect_until_angle_close("", acc) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), ""}
+  end
+
   # Parse individual token
   defp parse_token(""), do: nil
   defp parse_token("~"), do: :rest
@@ -191,6 +235,10 @@ defmodule UzuParser do
       # Handle repetition: "bd*4" or "bd:1*4"
       String.contains?(token, "*") ->
         parse_repetition(token)
+
+      # Handle random choice: "bd|sd|hh"
+      String.contains?(token, "|") ->
+        parse_random_choice(token)
 
       # Handle sample selection: "bd:0"
       String.contains?(token, ":") ->
@@ -325,6 +373,53 @@ defmodule UzuParser do
     end
   end
 
+  # Parse random choice: "bd|sd|hh" -> {:random_choice, [options]}
+  # Parser stores all options; playback system makes the random selection
+  defp parse_random_choice(token) do
+    options =
+      token
+      |> String.split("|")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(&parse_token_for_choice/1)
+      |> Enum.reject(&is_nil/1)
+
+    case options do
+      [] -> {:sound, token, nil, nil, nil}
+      [single] -> single
+      multiple -> {:random_choice, multiple}
+    end
+  end
+
+  # Parse a token for use in random choice (without random choice recursion)
+  defp parse_token_for_choice(token) do
+    cond do
+      token == "" ->
+        nil
+
+      token == "~" ->
+        :rest
+
+      String.contains?(token, "?") ->
+        parse_probability(token)
+
+      String.contains?(token, "@") ->
+        parse_elongation(token)
+
+      String.contains?(token, "!") ->
+        parse_replication(token)
+
+      String.contains?(token, "*") ->
+        parse_repetition(token)
+
+      String.contains?(token, ":") ->
+        parse_sample_selection(token)
+
+      true ->
+        {:sound, token, nil, nil, nil}
+    end
+  end
+
   # Parse replication: "bd!3" or "bd:1!3" -> replicated sound tokens
   # Functionally similar to repetition but with different syntax
   defp parse_replication(token) do
@@ -405,6 +500,24 @@ defmodule UzuParser do
     end
   end
 
+  # Parse alternation: "bd sd hh" -> {:alternate, [options]}
+  # Cycles through options sequentially based on cycle number
+  defp parse_alternation(inner) do
+    options =
+      inner
+      |> String.split()
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(&parse_token/1)
+      |> Enum.reject(&is_nil/1)
+
+    case options do
+      [] -> nil
+      [single] -> single
+      multiple -> {:alternate, multiple}
+    end
+  end
+
   # Calculate actual timing for events
   defp calculate_timings(parsed_tokens) do
     # Flatten any nested structures first
@@ -458,6 +571,36 @@ defmodule UzuParser do
               end)
               |> Enum.reject(&is_nil/1)
 
+            {:random_choice, options} ->
+              # Store all options in params; playback system selects one randomly
+              option_data = Enum.map(options, &token_to_option_data/1)
+              params = %{random_choice: option_data}
+              # Use first option's sound as default for the event
+              {default_sound, default_sample} = get_default_from_options(options)
+
+              [
+                Event.new(default_sound, current_time,
+                  duration: duration,
+                  sample: default_sample,
+                  params: params
+                )
+              ]
+
+            {:alternate, options} ->
+              # Store all options in params; playback system cycles through them
+              option_data = Enum.map(options, &token_to_option_data/1)
+              params = %{alternate: option_data}
+              # Use first option's sound as default for the event
+              {default_sound, default_sample} = get_default_from_options(options)
+
+              [
+                Event.new(default_sound, current_time,
+                  duration: duration,
+                  sample: default_sample,
+                  params: params
+                )
+              ]
+
             _ ->
               []
           end
@@ -473,7 +616,38 @@ defmodule UzuParser do
   defp get_token_weight({:sound, _, _, _, nil}), do: 1.0
   defp get_token_weight({:sound, _, _, _, weight}), do: weight
   defp get_token_weight({:chord, _}), do: 1.0
+  defp get_token_weight({:random_choice, _}), do: 1.0
+  defp get_token_weight({:alternate, _}), do: 1.0
   defp get_token_weight(_), do: 1.0
+
+  # Convert a token to option data for random_choice/alternate params
+  defp token_to_option_data(:rest), do: %{sound: nil, sample: nil, probability: nil}
+
+  defp token_to_option_data({:sound, sound, sample, probability, _weight}) do
+    %{sound: sound, sample: sample, probability: probability}
+  end
+
+  defp token_to_option_data({:repeat, items}) do
+    # For repeat, use the first item's data
+    case items do
+      [first | _] -> token_to_option_data(first)
+      _ -> %{sound: nil, sample: nil, probability: nil}
+    end
+  end
+
+  defp token_to_option_data(_), do: %{sound: nil, sample: nil, probability: nil}
+
+  # Get default sound and sample from first option
+  defp get_default_from_options([]), do: {"?", nil}
+
+  defp get_default_from_options([first | _]) do
+    case first do
+      :rest -> {"~", nil}
+      {:sound, sound, sample, _, _} -> {sound, sample}
+      {:repeat, [{:sound, sound, sample, _, _} | _]} -> {sound, sample}
+      _ -> {"?", nil}
+    end
+  end
 
   # Flatten nested structure (subdivisions, repetitions) into flat list
   defp flatten_structure(tokens) do
@@ -485,4 +659,6 @@ defmodule UzuParser do
   defp flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:chord, _sounds} = chord), do: [chord]
+  defp flatten_token({:random_choice, _options} = choice), do: [choice]
+  defp flatten_token({:alternate, _options} = alt), do: [alt]
 end

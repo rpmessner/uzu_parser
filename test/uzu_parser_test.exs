@@ -668,6 +668,180 @@ defmodule UzuParserTest do
     end
   end
 
+  describe "random choice" do
+    test "parses simple random choice" do
+      events = UzuParser.parse("bd|sd|hh")
+
+      assert length(events) == 1
+      event = hd(events)
+      # Default sound is the first option
+      assert event.sound == "bd"
+      # Options stored in params
+      assert Map.has_key?(event.params, :random_choice)
+      options = event.params.random_choice
+      assert length(options) == 3
+      assert Enum.at(options, 0).sound == "bd"
+      assert Enum.at(options, 1).sound == "sd"
+      assert Enum.at(options, 2).sound == "hh"
+    end
+
+    test "parses random choice with two options" do
+      events = UzuParser.parse("bd|sd")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      options = event.params.random_choice
+      assert length(options) == 2
+    end
+
+    test "parses random choice in sequence" do
+      events = UzuParser.parse("bd|sd hh")
+
+      assert length(events) == 2
+      # First event is random choice
+      assert Map.has_key?(Enum.at(events, 0).params, :random_choice)
+      # Second event is regular sound
+      assert Enum.at(events, 1).sound == "hh"
+      assert Enum.at(events, 1).params == %{}
+    end
+
+    test "parses random choice with sample selection" do
+      events = UzuParser.parse("bd:0|sd:1")
+
+      assert length(events) == 1
+      event = hd(events)
+      options = event.params.random_choice
+      assert Enum.at(options, 0).sound == "bd"
+      assert Enum.at(options, 0).sample == 0
+      assert Enum.at(options, 1).sound == "sd"
+      assert Enum.at(options, 1).sample == 1
+    end
+
+    test "parses random choice in subdivision" do
+      events = UzuParser.parse("[bd|sd hh]")
+
+      assert length(events) == 2
+      # First event is random choice
+      assert Map.has_key?(Enum.at(events, 0).params, :random_choice)
+      # Second event is regular sound
+      assert Enum.at(events, 1).sound == "hh"
+    end
+
+    test "single option degrades to simple sound" do
+      events = UzuParser.parse("bd|")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      # No random_choice in params for single option
+      refute Map.has_key?(event.params, :random_choice)
+    end
+
+    test "parses random choice with rest option" do
+      events = UzuParser.parse("bd|~")
+
+      assert length(events) == 1
+      event = hd(events)
+      options = event.params.random_choice
+      assert length(options) == 2
+      assert Enum.at(options, 0).sound == "bd"
+      # rest
+      assert Enum.at(options, 1).sound == nil
+    end
+  end
+
+  describe "alternation" do
+    test "parses simple alternation" do
+      events = UzuParser.parse("<bd sd hh>")
+
+      assert length(events) == 1
+      event = hd(events)
+      # Default sound is the first option
+      assert event.sound == "bd"
+      # Options stored in params
+      assert Map.has_key?(event.params, :alternate)
+      options = event.params.alternate
+      assert length(options) == 3
+      assert Enum.at(options, 0).sound == "bd"
+      assert Enum.at(options, 1).sound == "sd"
+      assert Enum.at(options, 2).sound == "hh"
+    end
+
+    test "parses alternation with two options" do
+      events = UzuParser.parse("<bd sd>")
+
+      assert length(events) == 1
+      event = hd(events)
+      options = event.params.alternate
+      assert length(options) == 2
+      assert Enum.at(options, 0).sound == "bd"
+      assert Enum.at(options, 1).sound == "sd"
+    end
+
+    test "parses alternation in sequence" do
+      events = UzuParser.parse("<bd sd> hh")
+
+      assert length(events) == 2
+      # First event is alternation
+      assert Map.has_key?(Enum.at(events, 0).params, :alternate)
+      # Second event is regular sound
+      assert Enum.at(events, 1).sound == "hh"
+      assert Enum.at(events, 1).params == %{}
+    end
+
+    test "parses alternation with sample selection" do
+      events = UzuParser.parse("<bd:0 sd:1 hh:2>")
+
+      assert length(events) == 1
+      event = hd(events)
+      options = event.params.alternate
+      assert Enum.at(options, 0).sound == "bd"
+      assert Enum.at(options, 0).sample == 0
+      assert Enum.at(options, 1).sound == "sd"
+      assert Enum.at(options, 1).sample == 1
+      assert Enum.at(options, 2).sound == "hh"
+      assert Enum.at(options, 2).sample == 2
+    end
+
+    test "parses multiple alternations" do
+      events = UzuParser.parse("<bd sd> <hh cp>")
+
+      assert length(events) == 2
+      assert Map.has_key?(Enum.at(events, 0).params, :alternate)
+      assert Map.has_key?(Enum.at(events, 1).params, :alternate)
+    end
+
+    test "parses alternation with probability" do
+      events = UzuParser.parse("<bd? sd>")
+
+      assert length(events) == 1
+      event = hd(events)
+      options = event.params.alternate
+      assert Enum.at(options, 0).probability == 0.5
+      assert Enum.at(options, 1).probability == nil
+    end
+
+    test "single option degrades to simple sound" do
+      events = UzuParser.parse("<bd>")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      # No alternate in params for single option
+      refute Map.has_key?(event.params, :alternate)
+    end
+
+    test "correct timing for alternation in sequence" do
+      events = UzuParser.parse("<bd sd> hh cp")
+
+      assert length(events) == 3
+      assert Enum.at(events, 0).time == 0.0
+      assert_in_delta Enum.at(events, 1).time, 0.333, 0.01
+      assert_in_delta Enum.at(events, 2).time, 0.666, 0.01
+    end
+  end
+
   describe "event properties" do
     test "events have correct structure" do
       [event | _] = UzuParser.parse("bd")

@@ -91,9 +91,83 @@ defmodule UzuParser do
   Note: The parser stores the options with an `:alternate` type.
   The playback system uses the cycle number to select which option to play.
 
+  ### Euclidean Rhythms
+  Parentheses generate rhythms using Euclidean distribution:
+
+      "bd(3,8)"          # 3 kicks distributed over 8 steps
+      "bd(3,8,2)"        # same with offset of 2
+      "bd(5,12)"         # complex polyrhythm
+
+  Note: Uses Bjorklund's algorithm to distribute hits evenly.
+
+  ### Division (slow down)
+  Slash slows a pattern over multiple cycles:
+
+      "bd/2"             # play every other cycle
+      "bd/4"             # play every 4th cycle
+      "[bd sd]/2"        # whole pattern over 2 cycles
+
+  Note: The parser stores the division factor in params. The playback
+  system uses the cycle number to decide if the event should play.
+
+  ### Polymetric Sequences
+  Curly braces create patterns with different step counts (polyrhythms):
+
+      "{bd sd hh, cp}"     # 3 steps vs 1 step
+      "{bd sd, hh cp oh}"  # 2 steps vs 3 steps
+
+  Note: Each comma-separated group runs independently over the cycle.
+  This creates polyrhythmic patterns where groups of different lengths
+  overlay each other.
+
+  ### Sound Parameters
+  Pipe syntax adds parameters to sounds for manipulation:
+
+      "bd|gain:0.8"              # volume control
+      "bd|speed:2|pan:0.5"       # multiple params
+      "bd:0|gain:1.2"            # sample + params
+      "bd|gain:0.8|delay:0.3"    # volume + delay
+
+  Supported parameters: gain, speed, pan, cutoff, resonance, delay, room
+
+  Note: Parameters are stored in the event's params map. The playback
+  system (e.g., Waveform) uses these values for sound manipulation.
+
+  ### Pattern Elongation
+  Underscore extends the previous event's duration:
+
+      "bd _ sd _"        # bd holds for 2 steps, sd holds for 2 steps
+      "bd _ _ sd"        # bd holds for 3 steps, sd for 1 step
+      "[bd _ sd _]"      # works in subdivisions too
+
+  Note: Each `_` adds one step of duration to the previous sound event.
+
+  ### Shorthand Separator
+  Period provides alternative grouping (equivalent to space in subdivisions):
+
+      "bd . sd . hh"     # same as "[bd] [sd] [hh]" or "bd sd hh"
+
+  Note: Primarily useful for visual separation in complex patterns.
+
+  ### Ratio/Speed Modifier
+  Percent specifies how many cycles the pattern spans (opposite of division):
+
+      "bd%2"             # bd spans 2 cycles (stored as speed: 0.5)
+      "[bd sd]%3"        # pattern spans 3 cycles
+
+  Note: The parser stores the speed factor in params. The playback system
+  uses this to adjust playback rate. `%2` = speed 0.5, `%0.5` = speed 2.
+
+  ### Polymetric Subdivision Control
+  Curly braces with percent controls step subdivision:
+
+      "{bd sd hh}%8"     # fit 3-step pattern into 8 subdivisions
+      "{bd sd, hh}%16"   # polymetric groups fitted into 16 subdivisions
+
+  Note: This stretches/compresses the polymetric pattern to fit the
+  specified number of steps while maintaining internal ratios.
+
   ## Future Features
-  - Parameters: "bd|gain:0.8|speed:2"
-  - Euclidean rhythms: "bd(3,8)"
   - Pattern transformations: fast(), slow(), rev()
   """
 
@@ -156,7 +230,10 @@ defmodule UzuParser do
         else: acc
 
     {subdivision, remaining} = collect_until_bracket_close(rest, [])
-    tokenize_recursive(remaining, [parse_subdivision(subdivision) | acc], "")
+
+    # Check for division modifier after subdivision: [bd sd]/2
+    {token, remaining} = parse_subdivision_with_modifiers(subdivision, remaining)
+    tokenize_recursive(remaining, [token | acc], "")
   end
 
   defp tokenize_recursive("<" <> rest, acc, current) do
@@ -170,32 +247,146 @@ defmodule UzuParser do
     tokenize_recursive(remaining, [parse_alternation(alternation) | acc], "")
   end
 
+  defp tokenize_recursive("{" <> rest, acc, current) do
+    # Start of polymetric sequence - save current token if any, then collect until }
+    acc =
+      if current != "" and String.trim(current) != "",
+        do: [parse_token(String.trim(current)) | acc],
+        else: acc
+
+    {polymetric, remaining} = collect_until_curly_close(rest, [])
+
+    # Check for subdivision modifier after polymetric: {bd sd}%8
+    {token, remaining} = parse_polymetric_with_modifiers(polymetric, remaining)
+    tokenize_recursive(remaining, [token | acc], "")
+  end
+
   defp tokenize_recursive(<<char::utf8, rest::binary>>, acc, current) do
-    if String.match?(<<char::utf8>>, ~r/\s/) do
-      # Whitespace - end current token
-      if current == "" do
-        tokenize_recursive(rest, acc, "")
-      else
-        tokenize_recursive(rest, [parse_token(String.trim(current)) | acc], "")
-      end
-    else
-      # Regular character - add to current token
-      tokenize_recursive(rest, acc, current <> <<char::utf8>>)
+    char_str = <<char::utf8>>
+
+    cond do
+      String.match?(char_str, ~r/\s/) ->
+        # Whitespace - end current token
+        if current == "" do
+          tokenize_recursive(rest, acc, "")
+        else
+          tokenize_recursive(rest, [parse_token(String.trim(current)) | acc], "")
+        end
+
+      char_str == "." and is_separator_dot?(current, rest) ->
+        # Period as separator (not part of a number)
+        if current == "" do
+          tokenize_recursive(rest, acc, "")
+        else
+          tokenize_recursive(rest, [parse_token(String.trim(current)) | acc], "")
+        end
+
+      true ->
+        # Regular character - add to current token
+        tokenize_recursive(rest, acc, current <> char_str)
     end
   end
 
-  # Collect everything until the closing bracket
+  # Check if a dot is a separator (not part of a decimal number)
+  # A dot is part of a number if it follows a digit and precedes a digit
+  defp is_separator_dot?(current, rest) do
+    # Not a number dot if: previous char is not a digit OR next char is not a digit
+    prev_is_digit = current != "" and String.match?(String.last(current), ~r/\d/)
+    next_is_digit = rest != "" and String.match?(String.first(rest), ~r/\d/)
+    not (prev_is_digit and next_is_digit)
+  end
+
+  # Parse subdivision with possible modifiers like /2 or *2
+  defp parse_subdivision_with_modifiers(inner, "/" <> rest) do
+    # Collect the divisor (digits until whitespace or end)
+    {divisor_str, remaining} = collect_number(rest, [])
+
+    case parse_number(divisor_str) do
+      {divisor, ""} when divisor > 0 ->
+        {{:subdivision_division, parse_subdivision(inner), divisor}, remaining}
+
+      _ ->
+        # Invalid divisor, just return subdivision
+        {parse_subdivision(inner), "/" <> rest}
+    end
+  end
+
+  defp parse_subdivision_with_modifiers(inner, "*" <> rest) do
+    # Collect the repetition count (digits until whitespace or end)
+    {count_str, remaining} = collect_number(rest, [])
+
+    case parse_number(count_str) do
+      {count, ""} when count > 0 ->
+        # Create repeated subdivisions
+        subdivision = parse_subdivision(inner)
+        repeated = {:subdivision_repeat, subdivision, round(count)}
+        {repeated, remaining}
+
+      _ ->
+        # Invalid count, just return subdivision
+        {parse_subdivision(inner), "*" <> rest}
+    end
+  end
+
+  defp parse_subdivision_with_modifiers(inner, remaining) do
+    {parse_subdivision(inner), remaining}
+  end
+
+  # Parse polymetric with possible modifiers like %8
+  defp parse_polymetric_with_modifiers(inner, "%" <> rest) do
+    # Collect the step count (digits until whitespace or end)
+    {steps_str, remaining} = collect_number(rest, [])
+
+    case parse_number(steps_str) do
+      {steps, ""} when steps > 0 ->
+        {{:polymetric_steps, parse_polymetric(inner), steps}, remaining}
+
+      _ ->
+        # Invalid steps, just return polymetric
+        {parse_polymetric(inner), "%" <> rest}
+    end
+  end
+
+  defp parse_polymetric_with_modifiers(inner, remaining) do
+    {parse_polymetric(inner), remaining}
+  end
+
+  # Collect digits until whitespace or end
+  defp collect_number("", acc), do: {IO.iodata_to_binary(Enum.reverse(acc)), ""}
+
+  defp collect_number(<<char::utf8, rest::binary>> = str, acc) do
+    if String.match?(<<char::utf8>>, ~r/[\d.]/) do
+      collect_number(rest, [<<char::utf8>> | acc])
+    else
+      {IO.iodata_to_binary(Enum.reverse(acc)), str}
+    end
+  end
+
+  # Collect everything until the matching closing bracket
+  # Tracks nesting depth to handle nested brackets correctly
   # Uses iolist accumulator for O(n) performance instead of O(n²) string concatenation
-  defp collect_until_bracket_close("]" <> rest, acc) do
+  defp collect_until_bracket_close(str, acc) do
+    collect_until_bracket_close(str, acc, 0)
+  end
+
+  defp collect_until_bracket_close("]" <> rest, acc, 0) do
     {IO.iodata_to_binary(Enum.reverse(acc)), rest}
   end
 
-  defp collect_until_bracket_close(<<char::utf8, rest::binary>>, acc) do
-    collect_until_bracket_close(rest, [<<char::utf8>> | acc])
+  defp collect_until_bracket_close("]" <> rest, acc, depth) when depth > 0 do
+    collect_until_bracket_close(rest, ["]" | acc], depth - 1)
+  end
+
+  defp collect_until_bracket_close("[" <> rest, acc, depth) do
+    collect_until_bracket_close(rest, ["[" | acc], depth + 1)
+  end
+
+  defp collect_until_bracket_close(<<char::utf8, rest::binary>>, acc, depth) do
+    collect_until_bracket_close(rest, [<<char::utf8>> | acc], depth)
   end
 
   # Handle unclosed bracket
-  defp collect_until_bracket_close("", acc) do
+  defp collect_until_bracket_close("", acc, _depth) do
     {IO.iodata_to_binary(Enum.reverse(acc)), ""}
   end
 
@@ -214,9 +405,25 @@ defmodule UzuParser do
     {IO.iodata_to_binary(Enum.reverse(acc)), ""}
   end
 
+  # Collect everything until the closing curly bracket
+  # Uses iolist accumulator for O(n) performance
+  defp collect_until_curly_close("}" <> rest, acc) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), rest}
+  end
+
+  defp collect_until_curly_close(<<char::utf8, rest::binary>>, acc) do
+    collect_until_curly_close(rest, [<<char::utf8>> | acc])
+  end
+
+  # Handle unclosed curly bracket
+  defp collect_until_curly_close("", acc) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), ""}
+  end
+
   # Parse individual token
   defp parse_token(""), do: nil
   defp parse_token("~"), do: :rest
+  defp parse_token("_"), do: :elongate
 
   defp parse_token(token) do
     cond do
@@ -239,6 +446,18 @@ defmodule UzuParser do
       # Handle random choice: "bd|sd|hh"
       String.contains?(token, "|") ->
         parse_random_choice(token)
+
+      # Handle euclidean rhythms: "bd(3,8)" or "bd(3,8,2)"
+      String.contains?(token, "(") ->
+        parse_euclidean(token)
+
+      # Handle division: "bd/2" (slow down over cycles)
+      String.contains?(token, "/") ->
+        parse_division(token)
+
+      # Handle ratio/speed: "bd%2" (spans multiple cycles)
+      String.contains?(token, "%") ->
+        parse_ratio(token)
 
       # Handle sample selection: "bd:0"
       String.contains?(token, ":") ->
@@ -373,22 +592,163 @@ defmodule UzuParser do
     end
   end
 
-  # Parse random choice: "bd|sd|hh" -> {:random_choice, [options]}
-  # Parser stores all options; playback system makes the random selection
+  # Parse euclidean rhythms: "bd(3,8)" or "bd(3,8,2)" or "bd:0(3,8)"
+  # Returns {:euclidean, sound, sample, k, n, offset}
+  defp parse_euclidean(token) do
+    case Regex.run(~r/^(.+?)\((\d+),(\d+)(?:,(\d+))?\)$/, token) do
+      [_, sound_part, k_str, n_str] ->
+        k = String.to_integer(k_str)
+        n = String.to_integer(n_str)
+        {sound, sample} = parse_sound_part(sound_part)
+
+        if k > 0 and n > 0 and k <= n do
+          {:euclidean, sound, sample, k, n, 0}
+        else
+          {:sound, token, nil, nil, nil}
+        end
+
+      [_, sound_part, k_str, n_str, offset_str] ->
+        k = String.to_integer(k_str)
+        n = String.to_integer(n_str)
+        offset = String.to_integer(offset_str)
+        {sound, sample} = parse_sound_part(sound_part)
+
+        if k > 0 and n > 0 and k <= n do
+          {:euclidean, sound, sample, k, n, offset}
+        else
+          {:sound, token, nil, nil, nil}
+        end
+
+      _ ->
+        {:sound, token, nil, nil, nil}
+    end
+  end
+
+  # Parse the sound part which may include sample selection: "bd" or "bd:0"
+  defp parse_sound_part(sound_part) do
+    case String.split(sound_part, ":") do
+      [sound, sample_str] ->
+        case Integer.parse(sample_str) do
+          {sample, ""} when sample >= 0 -> {sound, sample}
+          _ -> {sound_part, nil}
+        end
+
+      _ ->
+        {sound_part, nil}
+    end
+  end
+
+  # Parse division: "bd/2" or "bd:0/3" -> {:division, sound, sample, divisor}
+  # Division slows down a pattern over multiple cycles
+  defp parse_division(token) do
+    case String.split(token, "/", parts: 2) do
+      [sound_part, divisor_str] ->
+        case parse_number(divisor_str) do
+          {divisor, ""} when divisor > 0 ->
+            {sound, sample} = parse_sound_part(sound_part)
+            {:division, sound, sample, divisor}
+
+          _ ->
+            # Invalid divisor, treat as literal
+            {:sound, token, nil, nil, nil}
+        end
+
+      _ ->
+        {:sound, token, nil, nil, nil}
+    end
+  end
+
+  # Parse ratio/speed: "bd%2" or "bd:0%3" -> {:ratio, sound, sample, cycles}
+  # Ratio specifies how many cycles the pattern spans (speed = 1/cycles)
+  defp parse_ratio(token) do
+    case String.split(token, "%", parts: 2) do
+      [sound_part, cycles_str] ->
+        case parse_number(cycles_str) do
+          {cycles, ""} when cycles > 0 ->
+            {sound, sample} = parse_sound_part(sound_part)
+            {:ratio, sound, sample, cycles}
+
+          _ ->
+            # Invalid ratio, treat as literal
+            {:sound, token, nil, nil, nil}
+        end
+
+      _ ->
+        {:sound, token, nil, nil, nil}
+    end
+  end
+
+  # Known sound parameters
+  @sound_params ~w(gain speed pan cutoff resonance delay room)
+
+  # Parse pipe syntax - either random choice or parameters
+  # Random choice: "bd|sd|hh" -> {:random_choice, [options]}
+  # Parameters: "bd|gain:0.8|speed:2" -> {:sound, "bd", nil, nil, nil} with params
   defp parse_random_choice(token) do
-    options =
+    parts =
       token
       |> String.split("|")
       |> Enum.map(&String.trim/1)
       |> Enum.reject(&(&1 == ""))
-      |> Enum.map(&parse_token_for_choice/1)
-      |> Enum.reject(&is_nil/1)
 
-    case options do
-      [] -> {:sound, token, nil, nil, nil}
-      [single] -> single
-      multiple -> {:random_choice, multiple}
+    # Check if this looks like parameters (parts after first contain "param:value")
+    case parts do
+      [] ->
+        {:sound, token, nil, nil, nil}
+
+      [single] ->
+        parse_token_for_choice(single)
+
+      [sound_part | rest] ->
+        if looks_like_parameters?(rest) do
+          parse_sound_with_params(sound_part, rest)
+        else
+          # It's random choice
+          options =
+            parts
+            |> Enum.map(&parse_token_for_choice/1)
+            |> Enum.reject(&is_nil/1)
+
+          case options do
+            [] -> {:sound, token, nil, nil, nil}
+            [single] -> single
+            multiple -> {:random_choice, multiple}
+          end
+        end
     end
+  end
+
+  # Check if parts look like parameters (contain "name:value" where name is a known param)
+  defp looks_like_parameters?(parts) do
+    Enum.any?(parts, fn part ->
+      case String.split(part, ":", parts: 2) do
+        [name, _value] -> name in @sound_params
+        _ -> false
+      end
+    end)
+  end
+
+  # Parse sound with parameters: "bd:0|gain:0.8|speed:2"
+  defp parse_sound_with_params(sound_part, param_parts) do
+    {sound, sample} = parse_sound_part(sound_part)
+    params = parse_params(param_parts)
+    {:sound_with_params, sound, sample, params}
+  end
+
+  # Parse parameter parts into a map
+  defp parse_params(parts) do
+    Enum.reduce(parts, %{}, fn part, acc ->
+      case String.split(part, ":", parts: 2) do
+        [name, value_str] when name in @sound_params ->
+          case parse_number(value_str) do
+            {value, ""} -> Map.put(acc, String.to_atom(name), value)
+            _ -> acc
+          end
+
+        _ ->
+          acc
+      end
+    end)
   end
 
   # Parse a token for use in random choice (without random choice recursion)
@@ -476,12 +836,14 @@ defmodule UzuParser do
   # Parse subdivision: "bd sd" -> {:subdivision, [{:sound, "bd"}, {:sound, "sd"}]}
   # Or polyphony: "bd,sd" -> {:subdivision, [{:chord, [{:sound, "bd"}, {:sound, "sd"}]}]}
   defp parse_subdivision(inner) do
-    # Check if this subdivision contains polyphony (comma-separated)
-    if String.contains?(inner, ",") do
+    # Check if this subdivision contains polyphony (comma-separated at top level)
+    # Only check for top-level commas (not inside nested brackets)
+    if has_top_level_comma?(inner) do
       # Parse as a chord - flatten any repetitions so we get individual sounds
+      # Use split_top_level_comma to respect nesting
       sounds =
         inner
-        |> String.split(",")
+        |> split_top_level_comma()
         |> Enum.map(&String.trim/1)
         |> Enum.reject(&(&1 == ""))
         |> Enum.map(&parse_token/1)
@@ -500,6 +862,84 @@ defmodule UzuParser do
     end
   end
 
+  # Check if string has a comma at the top level (not inside nested brackets)
+  defp has_top_level_comma?(str) do
+    has_top_level_comma?(str, 0)
+  end
+
+  defp has_top_level_comma?("", _depth), do: false
+
+  defp has_top_level_comma?("," <> _rest, 0), do: true
+
+  defp has_top_level_comma?("[" <> rest, depth) do
+    has_top_level_comma?(rest, depth + 1)
+  end
+
+  defp has_top_level_comma?("]" <> rest, depth) do
+    has_top_level_comma?(rest, max(0, depth - 1))
+  end
+
+  defp has_top_level_comma?("{" <> rest, depth) do
+    has_top_level_comma?(rest, depth + 1)
+  end
+
+  defp has_top_level_comma?("}" <> rest, depth) do
+    has_top_level_comma?(rest, max(0, depth - 1))
+  end
+
+  defp has_top_level_comma?("<" <> rest, depth) do
+    has_top_level_comma?(rest, depth + 1)
+  end
+
+  defp has_top_level_comma?(">" <> rest, depth) do
+    has_top_level_comma?(rest, max(0, depth - 1))
+  end
+
+  defp has_top_level_comma?(<<_::utf8, rest::binary>>, depth) do
+    has_top_level_comma?(rest, depth)
+  end
+
+  # Split string by top-level commas only (respecting nesting)
+  defp split_top_level_comma(str) do
+    split_top_level_comma(str, [], "", 0)
+  end
+
+  defp split_top_level_comma("", parts, current, _depth) do
+    Enum.reverse([current | parts])
+  end
+
+  defp split_top_level_comma("," <> rest, parts, current, 0) do
+    split_top_level_comma(rest, [current | parts], "", 0)
+  end
+
+  defp split_top_level_comma("[" <> rest, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> "[", depth + 1)
+  end
+
+  defp split_top_level_comma("]" <> rest, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> "]", max(0, depth - 1))
+  end
+
+  defp split_top_level_comma("{" <> rest, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> "{", depth + 1)
+  end
+
+  defp split_top_level_comma("}" <> rest, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> "}", max(0, depth - 1))
+  end
+
+  defp split_top_level_comma("<" <> rest, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> "<", depth + 1)
+  end
+
+  defp split_top_level_comma(">" <> rest, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> ">", max(0, depth - 1))
+  end
+
+  defp split_top_level_comma(<<char::utf8, rest::binary>>, parts, current, depth) do
+    split_top_level_comma(rest, parts, current <> <<char::utf8>>, depth)
+  end
+
   # Parse alternation: "bd sd hh" -> {:alternate, [options]}
   # Cycles through options sequentially based on cycle number
   defp parse_alternation(inner) do
@@ -515,6 +955,28 @@ defmodule UzuParser do
       [] -> nil
       [single] -> single
       multiple -> {:alternate, multiple}
+    end
+  end
+
+  # Parse polymetric sequence: "bd sd hh, cp" -> {:polymetric, [groups]}
+  # Each group is independently timed over the cycle
+  defp parse_polymetric(inner) do
+    groups =
+      inner
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(fn group ->
+        group
+        |> tokenize()
+        |> Enum.reject(&is_nil/1)
+      end)
+      |> Enum.reject(&(&1 == []))
+
+    case groups do
+      [] -> nil
+      [single] -> {:subdivision, single}
+      multiple -> {:polymetric, multiple}
     end
   end
 
@@ -553,6 +1015,18 @@ defmodule UzuParser do
             {:sound, sound, sample, probability, _weight} ->
               params = if probability, do: %{probability: probability}, else: %{}
               [Event.new(sound, current_time, duration: duration, sample: sample, params: params)]
+
+            {:sound_with_params, sound, sample, sound_params} ->
+              # Remove internal _weight key before creating event
+              clean_params = Map.delete(sound_params, :_weight)
+
+              [
+                Event.new(sound, current_time,
+                  duration: duration,
+                  sample: sample,
+                  params: clean_params
+                )
+              ]
 
             {:chord, sounds} ->
               # Create multiple events at the same time for polyphony
@@ -601,6 +1075,85 @@ defmodule UzuParser do
                 )
               ]
 
+            {:division, sound, sample, divisor} ->
+              # Store divisor in params; playback system decides if event plays
+              params = %{division: divisor}
+
+              [
+                Event.new(sound, current_time,
+                  duration: duration,
+                  sample: sample,
+                  params: params
+                )
+              ]
+
+            {:ratio, sound, sample, cycles} ->
+              # Store speed in params (speed = 1/cycles)
+              # e.g., %2 means spans 2 cycles, so speed is 0.5
+              params = %{speed: 1.0 / cycles}
+
+              [
+                Event.new(sound, current_time,
+                  duration: duration,
+                  sample: sample,
+                  params: params
+                )
+              ]
+
+            {:chord_division, sounds, divisor} ->
+              # Create chord events with division applied to each
+              Enum.map(sounds, fn
+                {:sound, sound, sample, probability, _weight} ->
+                  base_params = if probability, do: %{probability: probability}, else: %{}
+                  params = Map.put(base_params, :division, divisor)
+
+                  Event.new(sound, current_time,
+                    duration: duration,
+                    sample: sample,
+                    params: params
+                  )
+
+                _ ->
+                  nil
+              end)
+              |> Enum.reject(&is_nil/1)
+
+            {:polymetric, groups} ->
+              # Each group is timed independently over the full duration
+              # Process each group as its own mini-cycle
+              groups
+              |> Enum.flat_map(fn group_tokens ->
+                flattened = flatten_structure(group_tokens)
+                calculate_polymetric_group_events(flattened, current_time, duration)
+              end)
+
+            {:polymetric_steps, inner_poly, steps} ->
+              # Polymetric with step subdivision control
+              # The pattern is stretched/compressed to fit `steps` subdivisions
+              case inner_poly do
+                {:polymetric, groups} ->
+                  # Each group spans the full duration but is subdivided into `steps`
+                  groups
+                  |> Enum.flat_map(fn group_tokens ->
+                    flattened = flatten_structure(group_tokens)
+                    # Calculate with step-based timing
+                    calculate_polymetric_stepped_events(
+                      flattened,
+                      current_time,
+                      duration,
+                      steps
+                    )
+                  end)
+
+                {:subdivision, items} ->
+                  # Single group, treat like subdivision with steps
+                  flattened = flatten_structure(items)
+                  calculate_polymetric_stepped_events(flattened, current_time, duration, steps)
+
+                _ ->
+                  []
+              end
+
             _ ->
               []
           end
@@ -611,13 +1164,148 @@ defmodule UzuParser do
     events
   end
 
+  # Calculate events for polymetric with step control {pattern}%steps
+  # Events are distributed across the specified number of steps
+  defp calculate_polymetric_stepped_events(tokens, start_time, total_duration, steps) do
+    if length(tokens) == 0 do
+      []
+    else
+      # Each token gets (token_count / steps) of the duration
+      # But we distribute based on the pattern's internal structure
+      token_count = length(tokens)
+      step_duration = total_duration / steps
+
+      # Map each token to its step position
+      # If pattern has fewer events than steps, events are spread out
+      # If pattern has more events than steps, events are compressed
+      {events, _} =
+        Enum.with_index(tokens)
+        |> Enum.reduce({[], start_time}, fn {token, idx}, {events_acc, _} ->
+          # Calculate position based on pattern index relative to steps
+          time_offset = idx / token_count * total_duration
+          # Each event's duration is one step
+          event_duration = step_duration
+
+          new_event =
+            case token do
+              :rest ->
+                nil
+
+              {:sound, sound, sample, probability, _weight} ->
+                params = if probability, do: %{probability: probability}, else: %{}
+
+                Event.new(sound, start_time + time_offset,
+                  duration: event_duration,
+                  sample: sample,
+                  params: params
+                )
+
+              {:chord, sounds} ->
+                Enum.map(sounds, fn
+                  {:sound, sound, sample, probability, _weight} ->
+                    params = if probability, do: %{probability: probability}, else: %{}
+
+                    Event.new(sound, start_time + time_offset,
+                      duration: event_duration,
+                      sample: sample,
+                      params: params
+                    )
+
+                  _ ->
+                    nil
+                end)
+                |> Enum.reject(&is_nil/1)
+
+              _ ->
+                nil
+            end
+
+          new_events =
+            case new_event do
+              nil -> []
+              list when is_list(list) -> list
+              event -> [event]
+            end
+
+          {events_acc ++ new_events, start_time + time_offset + event_duration}
+        end)
+
+      events
+    end
+  end
+
+  # Calculate events for a polymetric group with its own timing
+  defp calculate_polymetric_group_events(tokens, start_time, total_duration) do
+    if length(tokens) == 0 do
+      []
+    else
+      total_weight =
+        tokens
+        |> Enum.map(&get_token_weight/1)
+        |> Enum.sum()
+
+      {events, _} =
+        Enum.reduce(tokens, {[], start_time}, fn token, {events_acc, current_time} ->
+          weight = get_token_weight(token)
+          duration = weight / total_weight * total_duration
+
+          new_event =
+            case token do
+              :rest ->
+                nil
+
+              {:sound, sound, sample, probability, _weight} ->
+                params = if probability, do: %{probability: probability}, else: %{}
+                Event.new(sound, current_time, duration: duration, sample: sample, params: params)
+
+              {:chord, sounds} ->
+                # Return list for chord
+                Enum.map(sounds, fn
+                  {:sound, sound, sample, probability, _weight} ->
+                    params = if probability, do: %{probability: probability}, else: %{}
+
+                    Event.new(sound, current_time,
+                      duration: duration,
+                      sample: sample,
+                      params: params
+                    )
+
+                  _ ->
+                    nil
+                end)
+                |> Enum.reject(&is_nil/1)
+
+              _ ->
+                nil
+            end
+
+          new_events =
+            case new_event do
+              nil -> []
+              list when is_list(list) -> list
+              event -> [event]
+            end
+
+          {events_acc ++ new_events, current_time + duration}
+        end)
+
+      events
+    end
+  end
+
   # Get the weight of a token (default 1.0 if no weight specified)
   defp get_token_weight(:rest), do: 1.0
   defp get_token_weight({:sound, _, _, _, nil}), do: 1.0
   defp get_token_weight({:sound, _, _, _, weight}), do: weight
+  defp get_token_weight({:sound_with_params, _, _, params}), do: Map.get(params, :_weight, 1.0)
   defp get_token_weight({:chord, _}), do: 1.0
   defp get_token_weight({:random_choice, _}), do: 1.0
   defp get_token_weight({:alternate, _}), do: 1.0
+  defp get_token_weight({:division, _, _, _}), do: 1.0
+  defp get_token_weight({:ratio, _, _, _}), do: 1.0
+  defp get_token_weight({:chord_division, _, _}), do: 1.0
+  defp get_token_weight({:polymetric, _}), do: 1.0
+  defp get_token_weight({:polymetric_steps, _, _}), do: 1.0
   defp get_token_weight(_), do: 1.0
 
   # Convert a token to option data for random_choice/alternate params
@@ -651,14 +1339,163 @@ defmodule UzuParser do
 
   # Flatten nested structure (subdivisions, repetitions) into flat list
   defp flatten_structure(tokens) do
-    Enum.flat_map(tokens, &flatten_token/1)
+    tokens
+    |> Enum.flat_map(&flatten_token/1)
+    |> process_elongations()
   end
 
+  # Process elongation tokens (_) by increasing weight of previous sound
+  defp process_elongations(tokens) do
+    {result, _} =
+      Enum.reduce(tokens, {[], nil}, fn token, {acc, prev} ->
+        case token do
+          :elongate ->
+            # Add weight to previous sound token
+            case prev do
+              nil ->
+                # No previous token, treat as rest
+                {acc ++ [:rest], nil}
+
+              _ ->
+                # Increase weight of previous token
+                updated = increase_token_weight(prev)
+                # Replace last element in acc with updated version
+                {List.replace_at(acc, -1, updated), updated}
+            end
+
+          _ ->
+            {acc ++ [token], token}
+        end
+      end)
+
+    result
+  end
+
+  # Increase the weight of a token by 1.0
+  defp increase_token_weight({:sound, name, sample, prob, nil}) do
+    {:sound, name, sample, prob, 2.0}
+  end
+
+  defp increase_token_weight({:sound, name, sample, prob, weight}) do
+    {:sound, name, sample, prob, weight + 1.0}
+  end
+
+  defp increase_token_weight({:sound_with_params, name, sample, params}) do
+    # For sound_with_params, we need to track weight differently
+    # Store it in params temporarily
+    current_weight = Map.get(params, :_weight, 1.0)
+    {:sound_with_params, name, sample, Map.put(params, :_weight, current_weight + 1.0)}
+  end
+
+  defp increase_token_weight(token), do: token
+
+  defp flatten_token(nil), do: []
   defp flatten_token(:rest), do: [:rest]
+  defp flatten_token(:elongate), do: [:elongate]
   defp flatten_token({:sound, _, _, _, _} = sound), do: [sound]
+  defp flatten_token({:sound_with_params, _, _, _} = sound), do: [sound]
   defp flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:chord, _sounds} = chord), do: [chord]
   defp flatten_token({:random_choice, _options} = choice), do: [choice]
   defp flatten_token({:alternate, _options} = alt), do: [alt]
+  defp flatten_token({:division, _, _, _} = div), do: [div]
+  defp flatten_token({:ratio, _, _, _} = ratio), do: [ratio]
+  defp flatten_token({:polymetric, _groups} = poly), do: [poly]
+  defp flatten_token({:polymetric_steps, _, _} = poly), do: [poly]
+
+  defp flatten_token({:subdivision_division, {:subdivision, items}, divisor}) do
+    # Flatten the subdivision and wrap each item with division info
+    items
+    |> Enum.flat_map(&flatten_token/1)
+    |> Enum.map(&apply_division(&1, divisor))
+  end
+
+  defp flatten_token({:subdivision_repeat, {:subdivision, items}, count}) do
+    # Flatten the subdivision and repeat the entire pattern count times
+    flattened = Enum.flat_map(items, &flatten_token/1)
+    List.duplicate(flattened, count) |> List.flatten()
+  end
+
+  defp flatten_token({:euclidean, sound, sample, k, n, offset}) do
+    # Generate euclidean pattern and convert to sound/rest tokens
+    pattern = bjorklund(k, n)
+    # Apply offset (rotate the pattern)
+    rotated = rotate_list(pattern, offset)
+
+    Enum.map(rotated, fn
+      1 -> {:sound, sound, sample, nil, nil}
+      0 -> :rest
+    end)
+  end
+
+  # Apply division to a token (convert sound to division)
+  defp apply_division(:rest, _divisor), do: :rest
+
+  defp apply_division({:sound, sound, sample, _prob, _weight}, divisor) do
+    {:division, sound, sample, divisor}
+  end
+
+  defp apply_division({:division, sound, sample, existing_divisor}, new_divisor) do
+    # Combine divisors (multiply)
+    {:division, sound, sample, existing_divisor * new_divisor}
+  end
+
+  defp apply_division({:chord, sounds}, divisor) do
+    # Apply division to each sound in the chord
+    {:chord_division, sounds, divisor}
+  end
+
+  defp apply_division(token, _divisor), do: token
+
+  # Bjorklund's algorithm for generating euclidean rhythms
+  # Distributes k pulses over n steps as evenly as possible
+  # Returns a list of 1s (hits) and 0s (rests)
+  defp bjorklund(k, n) when k == n do
+    List.duplicate(1, n)
+  end
+
+  defp bjorklund(k, n) when k == 0 do
+    List.duplicate(0, n)
+  end
+
+  defp bjorklund(k, n) do
+    # Initialize: k groups of [1] and (n-k) groups of [0]
+    ones = List.duplicate([1], k)
+    zeros = List.duplicate([0], n - k)
+    bjorklund_iterate(ones, zeros)
+  end
+
+  # Recursive step of Bjorklund's algorithm
+  defp bjorklund_iterate(left, []) do
+    List.flatten(left)
+  end
+
+  defp bjorklund_iterate(left, right) when length(right) == 1 do
+    List.flatten(left ++ right)
+  end
+
+  defp bjorklund_iterate(left, right) do
+    # Distribute right elements among left elements
+    min_len = min(length(left), length(right))
+    {left_take, left_rest} = Enum.split(left, min_len)
+    {right_take, right_rest} = Enum.split(right, min_len)
+
+    # Combine pairs
+    combined = Enum.zip_with(left_take, right_take, fn l, r -> l ++ r end)
+
+    # Continue with combined as left, and remainder as right
+    bjorklund_iterate(combined, left_rest ++ right_rest)
+  end
+
+  # Rotate a list by offset positions to the left
+  defp rotate_list(list, 0), do: list
+  defp rotate_list([], _offset), do: []
+
+  defp rotate_list(list, offset) do
+    len = length(list)
+    normalized_offset = rem(offset, len)
+    {front, back} = Enum.split(list, normalized_offset)
+    back ++ front
+  end
 end

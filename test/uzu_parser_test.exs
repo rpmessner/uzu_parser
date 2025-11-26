@@ -159,6 +159,64 @@ defmodule UzuParserTest do
       assert length(events) == 2
       assert Enum.map(events, & &1.sound) == ["bd", "sd"]
     end
+
+    test "parses subdivision repetition [bd sd]*2" do
+      events = UzuParser.parse("[bd sd]*2")
+
+      assert length(events) == 4
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "bd", "sd"]
+      assert_in_delta Enum.at(events, 0).duration, 0.25, 0.01
+      assert_in_delta Enum.at(events, 0).time, 0.0, 0.01
+      assert_in_delta Enum.at(events, 1).time, 0.25, 0.01
+      assert_in_delta Enum.at(events, 2).time, 0.5, 0.01
+      assert_in_delta Enum.at(events, 3).time, 0.75, 0.01
+    end
+
+    test "parses subdivision repetition [bd hh sd]*3" do
+      events = UzuParser.parse("[bd hh sd]*3")
+
+      assert length(events) == 9
+
+      assert Enum.map(events, & &1.sound) == [
+               "bd",
+               "hh",
+               "sd",
+               "bd",
+               "hh",
+               "sd",
+               "bd",
+               "hh",
+               "sd"
+             ]
+    end
+
+    test "parses subdivision repetition in sequence" do
+      events = UzuParser.parse("bd [sd hh]*2")
+
+      assert length(events) == 5
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "hh", "sd", "hh"]
+    end
+
+    test "parses nested brackets [[bd sd] hh]" do
+      events = UzuParser.parse("[[bd sd] hh]")
+
+      assert length(events) == 3
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "hh"]
+      assert_in_delta Enum.at(events, 0).duration, 0.333, 0.01
+    end
+
+    test "parses nested polyphony inside bracket [[bd,sd] hh]" do
+      events = UzuParser.parse("[[bd,sd] hh]")
+
+      assert length(events) == 3
+      # bd and sd play together, then hh
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+      hh = Enum.find(events, &(&1.sound == "hh"))
+
+      assert_in_delta bd.time, sd.time, 0.01
+      assert_in_delta hh.time, 0.5, 0.01
+    end
   end
 
   describe "complex patterns" do
@@ -839,6 +897,581 @@ defmodule UzuParserTest do
       assert Enum.at(events, 0).time == 0.0
       assert_in_delta Enum.at(events, 1).time, 0.333, 0.01
       assert_in_delta Enum.at(events, 2).time, 0.666, 0.01
+    end
+  end
+
+  describe "pattern elongation" do
+    test "parses simple elongation bd _ sd _" do
+      events = UzuParser.parse("bd _ sd _")
+
+      assert length(events) == 2
+      # bd and sd each have weight 2 (original + 1 from _)
+      # Total weight 4, each gets 50%
+      assert_in_delta Enum.at(events, 0).duration, 0.5, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.5, 0.01
+    end
+
+    test "parses multiple elongations bd _ _ sd" do
+      events = UzuParser.parse("bd _ _ sd")
+
+      assert length(events) == 2
+      # bd has weight 3, sd has weight 1, total 4
+      assert_in_delta Enum.at(events, 0).duration, 0.75, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.25, 0.01
+    end
+
+    test "parses elongation in subdivision" do
+      events = UzuParser.parse("[bd _ sd]")
+
+      assert length(events) == 2
+      # bd has weight 2, sd has weight 1, total 3
+      assert_in_delta Enum.at(events, 0).duration, 0.666, 0.01
+      assert_in_delta Enum.at(events, 1).duration, 0.333, 0.01
+    end
+
+    test "elongation at start treated as rest" do
+      events = UzuParser.parse("_ bd sd")
+
+      # _ at start has no previous sound, becomes rest
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 1).sound == "sd"
+    end
+
+    test "elongation with sample selection" do
+      events = UzuParser.parse("bd:1 _ sd")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 0).sample == 1
+      assert_in_delta Enum.at(events, 0).duration, 0.666, 0.01
+    end
+  end
+
+  describe "shorthand separator" do
+    test "parses period as separator bd . sd . hh" do
+      events = UzuParser.parse("bd . sd . hh")
+
+      assert length(events) == 3
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "hh"]
+    end
+
+    test "parses period without spaces" do
+      events = UzuParser.parse("bd.sd.hh")
+
+      assert length(events) == 3
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "hh"]
+    end
+
+    test "period in subdivision" do
+      events = UzuParser.parse("[bd . sd] hh")
+
+      assert length(events) == 3
+      assert Enum.map(events, & &1.sound) == ["bd", "sd", "hh"]
+    end
+
+    test "period does not break decimal numbers" do
+      events = UzuParser.parse("bd|gain:0.8")
+
+      assert length(events) == 1
+      assert hd(events).params == %{gain: 0.8}
+    end
+
+    test "period does not break decimal in ratio" do
+      events = UzuParser.parse("bd%0.5")
+
+      assert length(events) == 1
+      assert hd(events).params == %{speed: 2.0}
+    end
+  end
+
+  describe "ratio notation" do
+    test "parses simple ratio bd%2" do
+      events = UzuParser.parse("bd%2")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      # %2 means spans 2 cycles, so speed is 0.5
+      assert event.params == %{speed: 0.5}
+    end
+
+    test "parses ratio with sample selection" do
+      events = UzuParser.parse("bd:1%3")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.sample == 1
+      assert_in_delta event.params.speed, 0.333, 0.01
+    end
+
+    test "parses fractional ratio bd%0.5" do
+      events = UzuParser.parse("bd%0.5")
+
+      assert length(events) == 1
+      # %0.5 means spans 0.5 cycles, so speed is 2.0
+      assert hd(events).params == %{speed: 2.0}
+    end
+
+    test "parses ratio in sequence" do
+      events = UzuParser.parse("bd%2 sd")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).params == %{speed: 0.5}
+      assert Enum.at(events, 1).params == %{}
+    end
+
+    test "handles invalid ratio gracefully" do
+      events = UzuParser.parse("bd%0")
+
+      # Zero ratio is invalid, treated as literal
+      assert length(events) == 1
+      assert hd(events).sound == "bd%0"
+    end
+  end
+
+  describe "sound parameters" do
+    test "parses single parameter bd|gain:0.8" do
+      events = UzuParser.parse("bd|gain:0.8")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.params == %{gain: 0.8}
+    end
+
+    test "parses multiple parameters bd|speed:2|pan:0.5" do
+      events = UzuParser.parse("bd|speed:2|pan:0.5")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.params == %{speed: 2.0, pan: 0.5}
+    end
+
+    test "parses parameters with sample selection bd:1|gain:0.8" do
+      events = UzuParser.parse("bd:1|gain:0.8")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.sample == 1
+      assert event.params == %{gain: 0.8}
+    end
+
+    test "parses all supported parameters" do
+      events =
+        UzuParser.parse(
+          "bd|gain:0.8|speed:1.5|pan:-0.5|cutoff:500|resonance:0.7|delay:0.3|room:0.5"
+        )
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.params.gain == 0.8
+      assert event.params.speed == 1.5
+      assert event.params.pan == -0.5
+      assert event.params.cutoff == 500.0
+      assert event.params.resonance == 0.7
+      assert event.params.delay == 0.3
+      assert event.params.room == 0.5
+    end
+
+    test "parses parameters in sequence" do
+      events = UzuParser.parse("bd|gain:0.8 sd|pan:0.5")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).params == %{gain: 0.8}
+      assert Enum.at(events, 1).params == %{pan: 0.5}
+    end
+
+    test "parses parameters in subdivision" do
+      events = UzuParser.parse("[bd|gain:0.8 sd]")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 0).params == %{gain: 0.8}
+      assert Enum.at(events, 1).sound == "sd"
+      assert Enum.at(events, 1).params == %{}
+    end
+
+    test "ignores unknown parameters" do
+      events = UzuParser.parse("bd|gain:0.8|unknown:1.0")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.params == %{gain: 0.8}
+      refute Map.has_key?(event.params, :unknown)
+    end
+
+    test "random choice still works with pipe" do
+      events = UzuParser.parse("bd|sd|hh")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert Map.has_key?(event.params, :random_choice)
+      assert length(event.params.random_choice) == 3
+    end
+
+    test "distinguishes params from random choice" do
+      # This is random choice (no known params)
+      choice_events = UzuParser.parse("bd|sd")
+      assert Map.has_key?(hd(choice_events).params, :random_choice)
+
+      # This is parameters (has known param name)
+      param_events = UzuParser.parse("bd|gain:0.5")
+      assert Map.has_key?(hd(param_events).params, :gain)
+      refute Map.has_key?(hd(param_events).params, :random_choice)
+    end
+
+    test "handles negative parameter values" do
+      events = UzuParser.parse("bd|pan:-1.0")
+
+      assert length(events) == 1
+      assert hd(events).params == %{pan: -1.0}
+    end
+
+    test "handles integer parameter values" do
+      events = UzuParser.parse("bd|cutoff:500")
+
+      assert length(events) == 1
+      assert hd(events).params == %{cutoff: 500.0}
+    end
+  end
+
+  describe "polymetric sequences" do
+    test "parses simple polymetric {bd sd hh, cp}" do
+      events = UzuParser.parse("{bd sd hh, cp}")
+
+      # Group 1: bd sd hh (3 events), Group 2: cp (1 event)
+      assert length(events) == 4
+
+      # Group 1 events at 0, 1/3, 2/3
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+      hh = Enum.find(events, &(&1.sound == "hh"))
+      cp = Enum.find(events, &(&1.sound == "cp"))
+
+      assert_in_delta bd.time, 0.0, 0.01
+      assert_in_delta sd.time, 0.333, 0.01
+      assert_in_delta hh.time, 0.666, 0.01
+
+      # cp spans full cycle
+      assert_in_delta cp.time, 0.0, 0.01
+      assert_in_delta cp.duration, 1.0, 0.01
+    end
+
+    test "parses polymetric with different step counts" do
+      events = UzuParser.parse("{bd sd, hh cp oh}")
+
+      # Group 1: 2 events, Group 2: 3 events
+      assert length(events) == 5
+
+      # Group 1 durations
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+      assert_in_delta bd.duration, 0.5, 0.01
+      assert_in_delta sd.duration, 0.5, 0.01
+
+      # Group 2 durations
+      hh = Enum.find(events, &(&1.sound == "hh"))
+      assert_in_delta hh.duration, 0.333, 0.01
+    end
+
+    test "parses polymetric with sample selection" do
+      events = UzuParser.parse("{bd:0 sd:1, cp:2}")
+
+      assert length(events) == 3
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+      cp = Enum.find(events, &(&1.sound == "cp"))
+
+      assert bd.sample == 0
+      assert sd.sample == 1
+      assert cp.sample == 2
+    end
+
+    test "parses polymetric in sequence" do
+      events = UzuParser.parse("hh {bd, sd cp}")
+
+      # hh first, then polymetric with 2 groups
+      assert length(events) == 4
+      assert Enum.at(events, 0).sound == "hh"
+    end
+
+    test "single group degrades to subdivision" do
+      events = UzuParser.parse("{bd sd hh}")
+
+      # Single group should behave like subdivision
+      assert length(events) == 3
+      assert Enum.all?(events, fn e -> e.duration < 1.0 end)
+    end
+
+    test "empty polymetric returns nil/empty" do
+      events = UzuParser.parse("{}")
+
+      assert events == []
+    end
+
+    test "polymetric with rests" do
+      events = UzuParser.parse("{bd ~ sd, cp}")
+
+      # Group 1: 3 slots but rest at position 1
+      # Group 2: cp at full cycle
+      # Total 3 events (bd, sd from group 1, cp from group 2)
+      assert length(events) == 3
+    end
+  end
+
+  describe "polymetric subdivision" do
+    test "parses {bd sd hh}%8 - 3 events over 8 steps" do
+      events = UzuParser.parse("{bd sd hh}%8")
+
+      assert length(events) == 3
+
+      # Each event has duration 1/8 of the cycle
+      assert Enum.all?(events, fn e -> abs(e.duration - 0.125) < 0.01 end)
+
+      # Events are distributed across the cycle
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+      hh = Enum.find(events, &(&1.sound == "hh"))
+
+      assert_in_delta bd.time, 0.0, 0.01
+      assert_in_delta sd.time, 0.333, 0.01
+      assert_in_delta hh.time, 0.666, 0.01
+    end
+
+    test "parses {bd sd}%4 - 2 events over 4 steps" do
+      events = UzuParser.parse("{bd sd}%4")
+
+      assert length(events) == 2
+
+      # Each event has duration 1/4 of the cycle
+      assert Enum.all?(events, fn e -> abs(e.duration - 0.25) < 0.01 end)
+
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+
+      assert_in_delta bd.time, 0.0, 0.01
+      assert_in_delta sd.time, 0.5, 0.01
+    end
+
+    test "parses {bd sd hh cp}%4 - 4 events over 4 steps" do
+      events = UzuParser.parse("{bd sd hh cp}%4")
+
+      assert length(events) == 4
+
+      # Each event has duration 1/4 of the cycle
+      assert Enum.all?(events, fn e -> abs(e.duration - 0.25) < 0.01 end)
+
+      # Events are evenly spaced at 0, 0.25, 0.5, 0.75
+      times = events |> Enum.map(& &1.time) |> Enum.sort()
+      assert_in_delta Enum.at(times, 0), 0.0, 0.01
+      assert_in_delta Enum.at(times, 1), 0.25, 0.01
+      assert_in_delta Enum.at(times, 2), 0.5, 0.01
+      assert_in_delta Enum.at(times, 3), 0.75, 0.01
+    end
+
+    test "parses polymetric subdivision with sample selection" do
+      events = UzuParser.parse("{bd:0 sd:1}%8")
+
+      assert length(events) == 2
+      bd = Enum.find(events, &(&1.sound == "bd"))
+      sd = Enum.find(events, &(&1.sound == "sd"))
+
+      assert bd.sample == 0
+      assert sd.sample == 1
+      assert_in_delta bd.duration, 0.125, 0.01
+    end
+
+    test "parses polymetric subdivision in sequence" do
+      events = UzuParser.parse("hh {bd sd}%4")
+
+      # hh takes first half, polymetric takes second half
+      assert length(events) == 3
+      hh = Enum.find(events, &(&1.sound == "hh"))
+      assert_in_delta hh.duration, 0.5, 0.01
+    end
+  end
+
+  describe "division" do
+    test "parses simple division bd/2" do
+      events = UzuParser.parse("bd/2")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.params == %{division: 2.0}
+    end
+
+    test "parses division with sample selection" do
+      events = UzuParser.parse("bd:1/4")
+
+      assert length(events) == 1
+      event = hd(events)
+      assert event.sound == "bd"
+      assert event.sample == 1
+      assert event.params == %{division: 4.0}
+    end
+
+    test "parses division in sequence" do
+      events = UzuParser.parse("bd/2 sd")
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).params == %{division: 2.0}
+      assert Enum.at(events, 1).params == %{}
+    end
+
+    test "parses subdivision with division [bd sd]/2" do
+      events = UzuParser.parse("[bd sd]/2")
+
+      assert length(events) == 2
+      # Both events should have division applied
+      assert Enum.at(events, 0).sound == "bd"
+      assert Enum.at(events, 0).params == %{division: 2.0}
+      assert Enum.at(events, 1).sound == "sd"
+      assert Enum.at(events, 1).params == %{division: 2.0}
+    end
+
+    test "parses chord with division [bd,sd]/4" do
+      events = UzuParser.parse("[bd,sd]/4")
+
+      assert length(events) == 2
+      # Both events in chord should have division
+      assert Enum.all?(events, &(&1.params == %{division: 4.0}))
+      # Both at same time (polyphony)
+      assert Enum.at(events, 0).time == Enum.at(events, 1).time
+    end
+
+    test "handles fractional division" do
+      events = UzuParser.parse("bd/1.5")
+
+      assert length(events) == 1
+      assert hd(events).params == %{division: 1.5}
+    end
+
+    test "handles invalid division gracefully" do
+      events = UzuParser.parse("bd/0")
+
+      # Zero division is invalid, treated as literal
+      assert length(events) == 1
+      assert hd(events).sound == "bd/0"
+    end
+
+    test "handles invalid division with non-number" do
+      events = UzuParser.parse("bd/abc")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd/abc"
+    end
+  end
+
+  describe "euclidean rhythms" do
+    test "parses simple euclidean rhythm bd(3,8)" do
+      events = UzuParser.parse("bd(3,8)")
+
+      # 3 hits distributed over 8 steps
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.sound == "bd"))
+
+      # Bjorklund(3,8) = [1,0,0,1,0,0,1,0] -> hits at positions 0, 3, 6
+      # Times: 0/8=0.0, 3/8=0.375, 6/8=0.75
+      assert_in_delta Enum.at(events, 0).time, 0.0, 0.01
+      assert_in_delta Enum.at(events, 1).time, 0.375, 0.01
+      assert_in_delta Enum.at(events, 2).time, 0.75, 0.01
+    end
+
+    test "parses euclidean rhythm bd(5,8)" do
+      events = UzuParser.parse("bd(5,8)")
+
+      # 5 hits distributed over 8 steps
+      assert length(events) == 5
+      assert Enum.all?(events, &(&1.sound == "bd"))
+    end
+
+    test "parses euclidean rhythm with offset bd(3,8,2)" do
+      events = UzuParser.parse("bd(3,8,2)")
+
+      # 3 hits over 8 steps, rotated by 2
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.sound == "bd"))
+
+      # Original pattern [1,0,0,1,0,0,1,0], offset 2 -> [0,1,0,0,1,0,0,1]
+      # Hits at positions 1, 4, 7 -> times 0.125, 0.5, 0.875
+      # But since rest at 0, first hit is at position 1
+      assert_in_delta Enum.at(events, 0).time, 0.125, 0.01
+      assert_in_delta Enum.at(events, 1).time, 0.5, 0.01
+    end
+
+    test "parses euclidean rhythm with sample selection" do
+      events = UzuParser.parse("bd:1(3,8)")
+
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.sound == "bd"))
+      assert Enum.all?(events, &(&1.sample == 1))
+    end
+
+    test "parses euclidean rhythm in sequence" do
+      events = UzuParser.parse("hh bd(3,8)")
+
+      # hh takes 1 slot, bd(3,8) expands to 8 slots, total 9 slots
+      # hh at 0/9, bd hits at 1/9, 4/9, 7/9 (approx)
+      assert length(events) == 4
+      assert Enum.at(events, 0).sound == "hh"
+      assert Enum.at(events, 1).sound == "bd"
+    end
+
+    test "parses euclidean rhythm bd(4,4) - all hits" do
+      events = UzuParser.parse("bd(4,4)")
+
+      assert length(events) == 4
+      assert Enum.all?(events, &(&1.sound == "bd"))
+    end
+
+    test "parses euclidean rhythm bd(1,4) - single hit" do
+      events = UzuParser.parse("bd(1,4)")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd"
+      assert hd(events).time == 0.0
+    end
+
+    test "handles invalid euclidean - k > n" do
+      events = UzuParser.parse("bd(5,3)")
+
+      # Invalid, treated as literal
+      assert length(events) == 1
+      assert hd(events).sound == "bd(5,3)"
+    end
+
+    test "handles invalid euclidean - k = 0" do
+      events = UzuParser.parse("bd(0,8)")
+
+      # Invalid, treated as literal
+      assert length(events) == 1
+      assert hd(events).sound == "bd(0,8)"
+    end
+
+    test "handles malformed euclidean gracefully" do
+      events = UzuParser.parse("bd(3,)")
+
+      assert length(events) == 1
+      assert hd(events).sound == "bd(3,)"
+    end
+
+    test "parses common world music euclidean patterns" do
+      # Cuban tresillo: 3 over 8
+      tresillo = UzuParser.parse("bd(3,8)")
+      assert length(tresillo) == 3
+
+      # Cinquillo: 5 over 8
+      cinquillo = UzuParser.parse("bd(5,8)")
+      assert length(cinquillo) == 5
+
+      # Bembé: 7 over 12
+      bembe = UzuParser.parse("bd(7,12)")
+      assert length(bembe) == 7
     end
   end
 

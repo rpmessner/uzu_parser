@@ -206,16 +206,29 @@ For pattern transformations like `fast`, `slow`, `rev`, `stack`, `cat`, `every`,
 UzuParser is part of the Elixir music ecosystem:
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   UzuParser     │────▶│   UzuPattern    │────▶│    Waveform     │
-│   (parsing)     │     │  (transforms)   │     │    (audio)      │
-│                 │     │                 │     │                 │
-│ • parse/1       │     │ • fast/slow/rev │     │ • OSC           │
-│ • mini-notation │     │ • stack/cat     │     │ • SuperDirt     │
-│ • [%Event{}]    │     │ • every/when    │     │ • MIDI          │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+┌───────────────────────────────────────────────────────┐
+│                    HarmonyServer                       │
+│                   (coordination)                       │
+│                                                        │
+│  ┌─────────────────┐     ┌─────────────────┐          │
+│  │   UzuParser     │────▶│   UzuPattern    │          │
+│  │   (parsing)     │     │  (transforms)   │          │
+│  │   ◀── HERE      │     │                 │          │
+│  │ • parse/1       │     │ • fast/slow/rev │          │
+│  │ • mini-notation │     │ • stack/cat     │          │
+│  │ • [%Event{}]    │     │ • every/when    │          │
+│  └─────────────────┘     └─────────────────┘          │
+│                                                        │
+└────────────────────────────┬──────────────────────────┘
+                             │
+                             ▼
+                   ┌─────────────────┐
+                   │    Waveform     │
+                   │    (audio)      │
+                   └─────────────────┘
 ```
 
+- **HarmonyServer**: Coordinates parsing, transforms, and audio output
 - **UzuParser**: Parses mini-notation strings into event lists
 - **UzuPattern**: Applies transformations to patterns (fast, slow, rev, stack, cat, every, jux)
 - **Waveform**: Handles audio output via OSC/SuperDirt/MIDI

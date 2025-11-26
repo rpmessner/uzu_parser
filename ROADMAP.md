@@ -6,53 +6,29 @@ This roadmap is based on features from [TidalCycles](https://tidalcycles.org/doc
 
 ## Architectural Role
 
-**UzuParser is the "pattern brain" of the Elixir music ecosystem.**
+**UzuParser handles parsing of mini-notation into event lists.**
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Client Applications                       │
-│  kino_harmony (Livebook) │ harmony.nvim (Neovim) │ discord_uzu  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-                           ▼
-              ┌─────────────────────────┐
-              │     HarmonyServer       │
-              │    (API Gateway)        │
-              │  - RPC for non-Elixir   │
-              │  - Scheduling           │
-              │  - delegates to ↓       │
-              └───────────┬─────────────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  UzuParser   │  │   harmony    │  │   waveform   │
-│  (patterns)  │  │   (theory)   │  │   (audio)    │
-│              │  │              │  │              │
-│ • parse      │  │ • chords     │  │ • OSC        │
-│ • fast/slow  │  │ • scales     │  │ • SuperDirt  │
-│ • stack/cat  │  │ • voicings   │  │ • MIDI       │
-│ • every/when │  │ • intervals  │  │ • scheduling │
-│ • rev/jux    │  │              │  │              │
-└──────────────┘  └──────────────┘  └──────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   UzuParser     │────▶│   UzuPattern    │────▶│    Waveform     │
+│   (parsing)     │     │  (transforms)   │     │    (audio)      │
+│                 │     │                 │     │                 │
+│ • parse/1       │     │ • fast/slow/rev │     │ • OSC           │
+│ • mini-notation │     │ • stack/cat     │     │ • SuperDirt     │
+│ • [%Event{}]    │     │ • every/when    │     │ • MIDI          │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
 **Responsibilities:**
 - **Parsing**: Convert mini-notation strings → `[%Event{}]` lists
-- **Transformations**: `fast`, `slow`, `rev`, `stack`, `cat`, `every`, `when`, `jux`, `degrade_by`
-- **Pattern algebra**: Combining, sequencing, layering patterns
+- Focus on syntax parsing only
 
 **NOT responsible for:**
-- Scheduling/timing (→ waveform)
-- Audio output (→ waveform)
-- Music theory (→ harmony)
-- RPC/remote access (→ HarmonyServer)
+- Pattern transformations (→ UzuPattern)
+- Scheduling/timing (→ Waveform)
+- Audio output (→ Waveform)
 
-**Why transformations live here:**
-- Transformations are pure functions on event lists
-- No scheduling, timing, or audio concerns
-- Reusable by any Elixir project without HarmonyServer
-- Follows Tidal/Strudel model where Pattern type owns transformations
+**For pattern transformations** (`fast`, `slow`, `rev`, `stack`, `cat`, `every`, `jux`, etc.), see [UzuPattern](https://github.com/rpmessner/uzu_pattern).
 
 ---
 
@@ -129,53 +105,7 @@ Add parameters to sounds for manipulation.
 
 **Use case**: Sound design, dynamics, mixing
 
-## 🔄 Phase 5: Pattern Transformations (v0.5.0)
-
-Priority: **HIGH** - Core pattern manipulation for kino_harmony integration
-
-### Temporal Transformations
-```elixir
-UzuParser.fast(events, 2.0)    # Speed up by factor (compress time)
-UzuParser.slow(events, 2.0)    # Slow down by factor (expand time)
-UzuParser.rev(events)          # Reverse pattern order and timing
-```
-**Implementation**: Transform `time` field of `%Event{}` structs
-
-### Pattern Combinators
-```elixir
-UzuParser.stack([pattern1, pattern2])  # Play simultaneously (merge events)
-UzuParser.cat([pattern1, pattern2])    # Play sequentially (offset timing)
-```
-**Implementation**: Combine event lists with appropriate timing adjustments
-
-### Conditional Transformations
-```elixir
-UzuParser.every(events, 3, &UzuParser.rev/1)  # Apply every N cycles
-UzuParser.when_(events, fn cycle -> rem(cycle, 2) == 0 end, &fast(&1, 2))
-```
-**Note**: `when_` because `when` is reserved in Elixir
-
-### Parameterized Transformations
-```elixir
-UzuParser.jux(events, &UzuParser.rev/1)   # Left: original, Right: transformed
-UzuParser.degrade_by(events, 0.5)         # Randomly remove ~50% of events
-UzuParser.degrade_by(events, 0.5, seed: 42)  # Deterministic for testing
-```
-
-### Implementation Notes
-- All transformations operate on `[%UzuParser.Event{}]` lists
-- Transform `time` field (0.0-1.0 cycle position)
-- Preserve all event params during transformation
-- Pure functions - no side effects, no scheduling
-
-### Testing Strategy
-- Unit tests for each transformation
-- Property-based tests with StreamData
-- Edge cases: empty lists, single events, boundary conditions
-
----
-
-## 🔮 Phase 6: Advanced Features (v0.6.0+)
+## 🔮 Phase 5: Advanced Features (v0.5.0+)
 
 Priority: Low - Nice-to-have enhancements
 
@@ -223,14 +153,14 @@ Complex pattern nesting and combinations.
 
 ## 📊 Priority Matrix
 
-| Feature | Complexity | Impact | Priority |
-|---------|-----------|--------|----------|
-| Polyphony `,` | Medium | High | Phase 1 |
-| Elongation `@` | Low | High | Phase 1 |
-| Replication `!` | Low | Medium | Phase 1 |
-| Random Removal `?` | Medium | High | Phase 1 |
-| Random Choice `\|` | Medium | High | Phase 2 |
-| Alternation `<>` | Medium | High | Phase 2 |
+| Feature | Complexity | Impact | Status |
+|---------|-----------|--------|--------|
+| Polyphony `,` | Medium | High | ✅ Done |
+| Elongation `@` | Low | High | ✅ Done |
+| Replication `!` | Low | Medium | ✅ Done |
+| Random Removal `?` | Medium | High | ✅ Done |
+| Random Choice `\|` | Medium | High | ✅ Done |
+| Alternation `<>` | Medium | High | ✅ Done |
 | Euclidean `()` | High | High | Phase 3 |
 | Division `/` | Low | Medium | Phase 3 |
 | Polymetric `{}` | High | Medium | Phase 3 |
@@ -240,13 +170,10 @@ Complex pattern nesting and combinations.
 
 ## 🎯 Recommended Next Steps
 
-Based on impact and complexity:
+1. **Phase 3** - Euclidean rhythms for generative patterns
+2. **Phase 4** - Parameters for sound manipulation
 
-1. **Start with Phase 1** - Essential operators that significantly expand pattern capability
-2. **Polyphony `,`** - Most requested feature, enables chords and layering
-3. **Random Removal `?`** - Adds life and variation to patterns
-4. **Elongation `@`** - Simple but powerful for rhythm shaping
-5. **Replication `!`** - Completes the repetition feature set
+**For pattern transformations** (`fast`, `slow`, `rev`, `stack`, `cat`, `every`, `jux`), see [UzuPattern](https://github.com/rpmessner/uzu_pattern).
 
 ## References
 

@@ -196,7 +196,10 @@ Each parsed event contains:
 
 - Parameters: `"bd|gain:0.8|speed:2"`
 - Euclidean rhythms: `"bd(3,8)"` (3 hits in 8 steps)
-- Pattern transformations: `fast()`, `slow()`, `rev()`, `stack()`, `cat()`, `every()`, `jux()`
+
+## Pattern Transformations
+
+For pattern transformations like `fast`, `slow`, `rev`, `stack`, `cat`, `every`, and `jux`, see [UzuPattern](https://github.com/rpmessner/uzu_pattern) - the pattern orchestration library that builds on UzuParser.
 
 ## Ecosystem Role
 
@@ -204,37 +207,18 @@ UzuParser is part of the Elixir music ecosystem:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   UzuParser     │     │    harmony      │     │    waveform     │
-│   (patterns)    │     │    (theory)     │     │    (audio)      │
+│   UzuParser     │────▶│   UzuPattern    │────▶│    Waveform     │
+│   (parsing)     │     │  (transforms)   │     │    (audio)      │
 │                 │     │                 │     │                 │
-│ • parse         │     │ • chords        │     │ • OSC           │
-│ • transform     │     │ • scales        │     │ • SuperDirt     │
-│ • combine       │     │ • voicings      │     │ • scheduling    │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 ▼
-                    ┌─────────────────────────┐
-                    │     HarmonyServer       │
-                    │    (API gateway)        │
-                    │                         │
-                    │ • Unified API           │
-                    │ • RPC for non-Elixir    │
-                    │ • Pattern scheduling    │
-                    └─────────────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  kino_harmony   │     │  harmony.nvim   │     │  discord_uzu    │
-│  (Livebook)     │     │  (Neovim)       │     │  (Discord)      │
+│ • parse/1       │     │ • fast/slow/rev │     │ • OSC           │
+│ • mini-notation │     │ • stack/cat     │     │ • SuperDirt     │
+│ • [%Event{}]    │     │ • every/when    │     │ • MIDI          │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-- **HarmonyServer**: API gateway that delegates to UzuParser for pattern operations
-- **kino_harmony**: Livebook widget for live coding
-- **harmony.nvim**: Neovim plugin (uses HarmonyServer RPC)
-- **discord_uzu**: Discord bot for collaborative live coding
+- **UzuParser**: Parses mini-notation strings into event lists
+- **UzuPattern**: Applies transformations to patterns (fast, slow, rev, stack, cat, every, jux)
+- **Waveform**: Handles audio output via OSC/SuperDirt/MIDI
 
 ## Development
 

@@ -187,11 +187,6 @@ Each parsed event contains:
 }
 ```
 
-## Projects Using UzuParser
-
-- [KinoHarmony](https://github.com/rpmessner/kino_harmony) - Livebook live coding environment with advanced jazz harmony
-- [discord_uzu](https://github.com/rpmessner/discord_uzu) - Discord bot for live coding
-
 ## Future Features
 
 - Parameters: `"bd|gain:0.8|speed:2"`
@@ -206,20 +201,14 @@ For pattern transformations like `fast`, `slow`, `rev`, `stack`, `cat`, `every`,
 UzuParser is part of the Elixir music ecosystem:
 
 ```
-┌───────────────────────────────────────────────────────┐
-│                    HarmonyServer                       │
-│                   (coordination)                       │
-│                                                        │
-│  ┌─────────────────┐     ┌─────────────────┐          │
-│  │   UzuParser     │────▶│   UzuPattern    │          │
-│  │   (parsing)     │     │  (transforms)   │          │
-│  │   ◀── HERE      │     │                 │          │
-│  │ • parse/1       │     │ • fast/slow/rev │          │
-│  │ • mini-notation │     │ • stack/cat     │          │
-│  │ • [%Event{}]    │     │ • every/when    │          │
-│  └─────────────────┘     └─────────────────┘          │
-│                                                        │
-└────────────────────────────┬──────────────────────────┘
+  ┌─────────────────┐     ┌─────────────────┐
+  │   UzuParser     │────▶│   UzuPattern    │
+  │   (parsing)     │     │  (transforms)   │
+  │   ◀── HERE      │     │                 │
+  │ • parse/1       │     │ • fast/slow/rev │
+  │ • mini-notation │     │ • stack/cat     │
+  │ • [%Event{}]    │     │ • every/when    │
+  └─────────────────┘     └─────────────────┘
                              │
                              ▼
                    ┌─────────────────┐
@@ -228,7 +217,6 @@ UzuParser is part of the Elixir music ecosystem:
                    └─────────────────┘
 ```
 
-- **HarmonyServer**: Coordinates parsing, transforms, and audio output
 - **UzuParser**: Parses mini-notation strings into event lists
 - **UzuPattern**: Applies transformations to patterns (fast, slow, rev, stack, cat, every, jux)
 - **Waveform**: Handles audio output via OSC/SuperDirt/MIDI

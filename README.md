@@ -201,20 +201,16 @@ For pattern transformations like `fast`, `slow`, `rev`, `stack`, `cat`, `every`,
 UzuParser is part of the Elixir music ecosystem:
 
 ```
-  ┌─────────────────┐     ┌─────────────────┐
-  │   UzuParser     │────▶│   UzuPattern    │
-  │   (parsing)     │     │  (transforms)   │
-  │   ◀── HERE      │     │                 │
-  │ • parse/1       │     │ • fast/slow/rev │
-  │ • mini-notation │     │ • stack/cat     │
-  │ • [%Event{}]    │     │ • every/when    │
-  └─────────────────┘     └─────────────────┘
-                             │
-                             ▼
-                   ┌─────────────────┐
-                   │    Waveform     │
-                   │    (audio)      │
-                   └─────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   UzuParser     │────▶│   UzuPattern    │────▶│    Waveform     │
+│   (parsing)     │     │  (transforms)   │     │    (audio)      │
+│                 │     │                 │     │                 │
+│ • parse/1       │     │ • Pattern struct│     │ • OSC           │
+│ • mini-notation │     │ • fast/slow/rev │     │ • SuperDirt     │
+│ • [%Event{}]    │     │ • stack/cat     │     │ • MIDI          │
+│                 │     │ • every/when    │     │ • scheduling    │
+│                 │     │ • query/2       │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
 - **UzuParser**: Parses mini-notation strings into event lists

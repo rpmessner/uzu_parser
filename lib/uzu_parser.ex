@@ -1482,9 +1482,13 @@ defmodule UzuParser do
   defp flatten_token(:elongate), do: [:elongate]
   defp flatten_token({:sound, _, _, _, _} = sound), do: [sound]
   defp flatten_token({:sound_with_params, _, _, _} = sound), do: [sound]
+  defp flatten_token({:degree, _} = degree), do: [degree]
+  defp flatten_token({:roman, _} = roman), do: [roman]
+  # Jazz chord symbol (string) vs polyphonic chord (list)
+  defp flatten_token({:chord, chord_symbol}) when is_binary(chord_symbol), do: [{:chord, chord_symbol}]
+  defp flatten_token({:chord, sounds}) when is_list(sounds), do: [{:chord, sounds}]
   defp flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
   defp flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
-  defp flatten_token({:chord, _sounds} = chord), do: [chord]
   defp flatten_token({:random_choice, _options} = choice), do: [choice]
   defp flatten_token({:alternate, _options} = alt), do: [alt]
   defp flatten_token({:division, _, _, _} = div), do: [div]

@@ -431,6 +431,10 @@ defmodule UzuParser do
       String.starts_with?(token, "^") ->
         parse_degree(token)
 
+      # Handle jazz chord/roman: "@Dm7", "@ii", "@V" (check before @ for elongation)
+      String.starts_with?(token, "@") and not String.contains?(String.slice(token, 1..-1//1), "@") ->
+        parse_chord_or_roman(token)
+
       # Handle probability: "bd?" or "bd?0.25" (must check before other operators)
       String.contains?(token, "?") ->
         parse_probability(token)
@@ -593,6 +597,33 @@ defmodule UzuParser do
 
           :error ->
             # Invalid degree, treat as literal
+            {:sound, token, nil, nil, nil}
+        end
+    end
+  end
+
+  # Parse chord symbol or roman numeral: "@Dm7", "@ii", "@V7", "@I" -> {:chord, symbol} or {:roman, numeral}
+  defp parse_chord_or_roman(token) do
+    case String.slice(token, 1..-1//1) do
+      "" ->
+        # Just "@" with no symbol, treat as literal
+        {:sound, token, nil, nil, nil}
+
+      symbol ->
+        # Determine if it's a chord symbol or roman numeral
+        first_char = String.first(symbol)
+
+        cond do
+          # Roman numerals start with lowercase or uppercase roman letters or 'b'/'#'
+          first_char in ["i", "I", "v", "V", "b", "#"] ->
+            {:roman, symbol}
+
+          # Chord symbols start with uppercase note letters A-G
+          first_char in ["A", "B", "C", "D", "E", "F", "G"] ->
+            {:chord, symbol}
+
+          true ->
+            # Unknown format, treat as literal
             {:sound, token, nil, nil, nil}
         end
     end

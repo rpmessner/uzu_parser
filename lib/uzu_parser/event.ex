@@ -7,11 +7,24 @@ defmodule UzuParser.Event do
 
   ## Fields
 
-    * `:sound` - The sound name (e.g., "bd", "sd", "hh")
+    * `:sound` - The sound name (e.g., "bd", "sd", "hh") or jazz notation marker
     * `:sample` - The sample number (e.g., 0, 1, 2), nil means use default
     * `:time` - The time offset within the cycle (0.0 to 1.0)
     * `:duration` - How long the event lasts (0.0 to 1.0, default 1.0)
     * `:params` - Additional parameters (volume, pan, speed, etc.)
+
+  ## Jazz Token Support
+
+  Jazz tokens are stored with a special `:jazz_type` param:
+
+      # Scale degree: ^3
+      %Event{sound: "^3", params: %{jazz_type: :degree, jazz_value: 3}}
+
+      # Chord symbol: @Dm7
+      %Event{sound: "@Dm7", params: %{jazz_type: :chord, jazz_value: "Dm7"}}
+
+      # Roman numeral: @ii
+      %Event{sound: "@ii", params: %{jazz_type: :roman, jazz_value: "ii"}}
 
   ## Examples
 

@@ -427,6 +427,10 @@ defmodule UzuParser do
 
   defp parse_token(token) do
     cond do
+      # Handle jazz scale degree: "^1", "^3", "^5", "^7" (check before @ for elongation)
+      String.starts_with?(token, "^") ->
+        parse_degree(token)
+
       # Handle probability: "bd?" or "bd?0.25" (must check before other operators)
       String.contains?(token, "?") ->
         parse_probability(token)
@@ -573,6 +577,59 @@ defmodule UzuParser do
   end
 
   defp add_weight_to_token(token, _weight), do: token
+
+  # Parse jazz scale degree: "^1", "^3", "^b7", "^#5" -> {:degree, degree}
+  defp parse_degree(token) do
+    case String.slice(token, 1..-1//1) do
+      "" ->
+        # Just "^" with no number, treat as literal
+        {:sound, token, nil, nil, nil}
+
+      degree_str ->
+        # Try to parse as degree with optional accidental
+        case parse_jazz_degree(degree_str) do
+          {:ok, degree} ->
+            {:degree, degree}
+
+          :error ->
+            # Invalid degree, treat as literal
+            {:sound, token, nil, nil, nil}
+        end
+    end
+  end
+
+  # Parse jazz degree string: "1", "3", "b7", "#5", "9", "11", "13"
+  defp parse_jazz_degree(str) do
+    case Integer.parse(str) do
+      {degree, ""} when degree >= 1 and degree <= 13 ->
+        {:ok, degree}
+
+      _ ->
+        # Try with accidental prefix (b or #)
+        case str do
+          "b" <> rest ->
+            case Integer.parse(rest) do
+              {degree, ""} when degree >= 1 and degree <= 13 ->
+                {:ok, "b#{degree}"}
+
+              _ ->
+                :error
+            end
+
+          "#" <> rest ->
+            case Integer.parse(rest) do
+              {degree, ""} when degree >= 1 and degree <= 13 ->
+                {:ok, "##{degree}"}
+
+              _ ->
+                :error
+            end
+
+          _ ->
+            :error
+        end
+    end
+  end
 
   # Parse sample selection: "bd:0" -> {:sound, "bd", 0, nil, nil}
   defp parse_sample_selection(token) do

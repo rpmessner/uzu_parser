@@ -25,3 +25,5 @@ uzu_parser-*.tar
 
 # Claude Code settings
 .claude/
+
+uzu_parser-*/

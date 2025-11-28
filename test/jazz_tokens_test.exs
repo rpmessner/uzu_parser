@@ -87,179 +87,175 @@ defmodule UzuParser.JazzTokensTest do
 
   describe "jazz chord symbol tokens" do
     test "parses major chord @Cmaj7" do
-      result = UzuParser.parse("@Cmaj7")
-      assert [{_, {:chord, "Cmaj7"}}] = result
+      [event] = UzuParser.parse("@Cmaj7")
+      assert event.sound == "@Cmaj7"
+      assert event.params.jazz_type == :chord
+      assert event.params.jazz_value == "Cmaj7"
     end
 
     test "parses minor chord @Dm7" do
-      result = UzuParser.parse("@Dm7")
-      assert [{_, {:chord, "Dm7"}}] = result
+      [event] = UzuParser.parse("@Dm7")
+      assert event.params.jazz_type == :chord
+      assert event.params.jazz_value == "Dm7"
     end
 
     test "parses dominant chord @G7" do
-      result = UzuParser.parse("@G7")
-      assert [{_, {:chord, "G7"}}] = result
+      [event] = UzuParser.parse("@G7")
+      assert event.params.jazz_type == :chord
+      assert event.params.jazz_value == "G7"
     end
 
     test "parses complex chord @Fmaj7#11" do
-      result = UzuParser.parse("@Fmaj7#11")
-      assert [{_, {:chord, "Fmaj7#11"}}] = result
+      [event] = UzuParser.parse("@Fmaj7#11")
+      assert event.params.jazz_type == :chord
+      assert event.params.jazz_value == "Fmaj7#11"
     end
 
     test "parses altered chord @Ab7b5" do
-      result = UzuParser.parse("@Ab7b5")
-      assert [{_, {:chord, "Ab7b5"}}] = result
+      [event] = UzuParser.parse("@Ab7b5")
+      assert event.params.jazz_type == :chord
+      assert event.params.jazz_value == "Ab7b5"
     end
 
     test "parses chord sequence @Dm7 @G7 @Cmaj7" do
-      result = UzuParser.parse("@Dm7 @G7 @Cmaj7")
-
-      assert [
-               {_, {:chord, "Dm7"}},
-               {_, {:chord, "G7"}},
-               {_, {:chord, "Cmaj7"}}
-             ] = result
+      events = UzuParser.parse("@Dm7 @G7 @Cmaj7")
+      assert length(events) == 3
+      assert Enum.map(events, & &1.params.jazz_value) == ["Dm7", "G7", "Cmaj7"]
     end
   end
 
   describe "jazz roman numeral tokens" do
     test "parses major roman @I" do
-      result = UzuParser.parse("@I")
-      assert [{_, {:roman, "I"}}] = result
+      [event] = UzuParser.parse("@I")
+      assert event.sound == "@I"
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "I"
     end
 
     test "parses minor roman @ii" do
-      result = UzuParser.parse("@ii")
-      assert [{_, {:roman, "ii"}}] = result
+      [event] = UzuParser.parse("@ii")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "ii"
     end
 
     test "parses dominant @V" do
-      result = UzuParser.parse("@V")
-      assert [{_, {:roman, "V"}}] = result
+      [event] = UzuParser.parse("@V")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "V"
     end
 
     test "parses diminished @vii" do
-      result = UzuParser.parse("@vii")
-      assert [{_, {:roman, "vii"}}] = result
+      [event] = UzuParser.parse("@vii")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "vii"
     end
 
     test "parses roman with quality @ii7" do
-      result = UzuParser.parse("@ii7")
-      assert [{_, {:roman, "ii7"}}] = result
+      [event] = UzuParser.parse("@ii7")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "ii7"
     end
 
     test "parses roman with alterations @V7b9" do
-      result = UzuParser.parse("@V7b9")
-      assert [{_, {:roman, "V7b9"}}] = result
+      [event] = UzuParser.parse("@V7b9")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "V7b9"
     end
 
     test "parses flatted roman @bVII" do
-      result = UzuParser.parse("@bVII")
-      assert [{_, {:roman, "bVII"}}] = result
+      [event] = UzuParser.parse("@bVII")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "bVII"
     end
 
     test "parses sharped roman @#IV" do
-      result = UzuParser.parse("@#IV")
-      assert [{_, {:roman, "#IV"}}] = result
+      [event] = UzuParser.parse("@#IV")
+      assert event.params.jazz_type == :roman
+      assert event.params.jazz_value == "#IV"
     end
 
     test "parses roman sequence @ii @V @I" do
-      result = UzuParser.parse("@ii @V @I")
-
-      assert [
-               {_, {:roman, "ii"}},
-               {_, {:roman, "V"}},
-               {_, {:roman, "I"}}
-             ] = result
+      events = UzuParser.parse("@ii @V @I")
+      assert length(events) == 3
+      assert Enum.map(events, & &1.params.jazz_value) == ["ii", "V", "I"]
     end
 
     test "parses two-five-one @ii7 @V7 @Imaj7" do
-      result = UzuParser.parse("@ii7 @V7 @Imaj7")
-
-      assert [
-               {_, {:roman, "ii7"}},
-               {_, {:roman, "V7"}},
-               {_, {:roman, "Imaj7"}}
-             ] = result
+      events = UzuParser.parse("@ii7 @V7 @Imaj7")
+      assert length(events) == 3
+      assert Enum.map(events, & &1.params.jazz_value) == ["ii7", "V7", "Imaj7"]
     end
   end
 
   describe "jazz tokens in subdivisions" do
     test "parses degrees in brackets" do
-      result = UzuParser.parse("[^1 ^3 ^5]")
-
-      # Should have a subdivision containing degree tokens
-      assert [{_, {:subdivision, events}}] = result
+      events = UzuParser.parse("[^1 ^3 ^5]")
       assert length(events) == 3
+      assert Enum.all?(events, &(&1.params.jazz_type == :degree))
     end
 
     test "parses chords in brackets" do
-      result = UzuParser.parse("[@Dm7 @G7]")
-
-      assert [{_, {:subdivision, events}}] = result
+      events = UzuParser.parse("[@Dm7 @G7]")
       assert length(events) == 2
+      assert Enum.all?(events, &(&1.params.jazz_type == :chord))
     end
 
     test "parses romans in brackets" do
-      result = UzuParser.parse("[@ii @V @I]")
-
-      assert [{_, {:subdivision, events}}] = result
+      events = UzuParser.parse("[@ii @V @I]")
       assert length(events) == 3
+      assert Enum.all?(events, &(&1.params.jazz_type == :roman))
     end
   end
 
   describe "jazz tokens mixed with regular tokens" do
     test "mixes degrees with sounds" do
-      result = UzuParser.parse("^1 bd ^3 sd")
+      events = UzuParser.parse("^1 bd ^3 sd")
+      assert length(events) == 4
 
-      assert [
-               {_, {:degree, 1}},
-               {_, {:sound, "bd", nil, nil, nil}},
-               {_, {:degree, 3}},
-               {_, {:sound, "sd", nil, nil, nil}}
-             ] = result
+      assert Enum.at(events, 0).params.jazz_type == :degree
+      assert Enum.at(events, 1).sound == "bd"
+      assert Enum.at(events, 2).params.jazz_type == :degree
+      assert Enum.at(events, 3).sound == "sd"
     end
 
     test "mixes chords with sounds" do
-      result = UzuParser.parse("@Dm7 bd @G7 sd")
+      events = UzuParser.parse("@Dm7 bd @G7 sd")
+      assert length(events) == 4
 
-      assert [
-               {_, {:chord, "Dm7"}},
-               {_, {:sound, "bd", nil, nil, nil}},
-               {_, {:chord, "G7"}},
-               {_, {:sound, "sd", nil, nil, nil}}
-             ] = result
+      assert Enum.at(events, 0).params.jazz_type == :chord
+      assert Enum.at(events, 1).sound == "bd"
+      assert Enum.at(events, 2).params.jazz_type == :chord
+      assert Enum.at(events, 3).sound == "sd"
     end
 
     test "mixes romans with rests" do
-      result = UzuParser.parse("@ii ~ @V ~")
-
-      assert [
-               {_, {:roman, "ii"}},
-               {_, :rest},
-               {_, {:roman, "V"}},
-               {_, :rest}
-             ] = result
+      events = UzuParser.parse("@ii ~ @V ~")
+      # Rests are filtered out by default
+      roman_events = Enum.filter(events, &Map.has_key?(&1.params, :jazz_type))
+      assert length(roman_events) == 2
     end
   end
 
   describe "edge cases" do
     test "bare @ is treated as sound" do
-      result = UzuParser.parse("@")
-      assert [{_, {:sound, "@", nil, nil, nil}}] = result
+      [event] = UzuParser.parse("@")
+      assert event.sound == "@"
+      assert event.params == %{}
     end
 
-    test "@ with number is roman" do
-      result = UzuParser.parse("@1")
-      # Numbers could be treated as sound since they're not valid roman numerals
-      # but our parser should handle this gracefully
-      result
+    test "@ with number is treated as sound" do
+      [event] = UzuParser.parse("@1")
+      # Numbers are not valid roman numerals or chord symbols
+      assert event.sound == "@1"
+      assert event.params == %{}
     end
 
     test "@ followed by elongation bd@2 is not a jazz token" do
-      result = UzuParser.parse("bd@2")
+      [event] = UzuParser.parse("bd@2")
       # Should parse as elongation, not as jazz token
-      assert [{_, {:sound, "bd", nil, nil, 2.0}}] = result
+      assert event.sound == "bd"
+      assert event.params == %{}
+      # Weight is internal and affects duration
     end
   end
 end

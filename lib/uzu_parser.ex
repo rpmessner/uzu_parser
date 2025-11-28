@@ -1100,6 +1100,24 @@ defmodule UzuParser do
             :rest ->
               []
 
+            {:degree, degree} ->
+              # Store degree as jazz token in params
+              sound = "^#{degree}"
+              params = %{jazz_type: :degree, jazz_value: degree}
+              [Event.new(sound, current_time, duration: duration, params: params)]
+
+            {:chord, chord_symbol} when is_binary(chord_symbol) ->
+              # Jazz chord symbol (not polyphonic chord)
+              sound = "@#{chord_symbol}"
+              params = %{jazz_type: :chord, jazz_value: chord_symbol}
+              [Event.new(sound, current_time, duration: duration, params: params)]
+
+            {:roman, roman} ->
+              # Roman numeral chord
+              sound = "@#{roman}"
+              params = %{jazz_type: :roman, jazz_value: roman}
+              [Event.new(sound, current_time, duration: duration, params: params)]
+
             {:sound, sound, sample, probability, _weight} ->
               params = if probability, do: %{probability: probability}, else: %{}
               [Event.new(sound, current_time, duration: duration, sample: sample, params: params)]

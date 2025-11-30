@@ -40,14 +40,18 @@ defmodule UzuParser.Event do
           sample: non_neg_integer() | nil,
           time: float(),
           duration: float(),
-          params: map()
+          params: map(),
+          source_start: non_neg_integer() | nil,
+          source_end: non_neg_integer() | nil
         }
 
   defstruct sound: "",
             sample: nil,
             time: 0.0,
             duration: 1.0,
-            params: %{}
+            params: %{},
+            source_start: nil,
+            source_end: nil
 
   @doc """
   Creates a new event with the given sound at the specified time.
@@ -66,7 +70,9 @@ defmodule UzuParser.Event do
       sample: Keyword.get(opts, :sample),
       time: time,
       duration: Keyword.get(opts, :duration, 1.0),
-      params: Keyword.get(opts, :params, %{})
+      params: Keyword.get(opts, :params, %{}),
+      source_start: Keyword.get(opts, :source_start),
+      source_end: Keyword.get(opts, :source_end)
     }
   end
 end

@@ -202,89 +202,140 @@ defmodule UzuParser do
       ]
   """
   def parse(pattern_string) when is_binary(pattern_string) do
-    pattern_string
-    |> String.trim()
-    |> tokenize()
+    trimmed = String.trim(pattern_string)
+    # Calculate leading whitespace offset
+    leading_ws = byte_size(pattern_string) - byte_size(String.trim_leading(pattern_string))
+
+    trimmed
+    |> tokenize_with_positions(leading_ws)
     |> calculate_timings()
   end
 
   # Split pattern into tokens, handling brackets specially
+  # Returns tokens with position info: {token, start_pos, end_pos}
+  defp tokenize_with_positions(pattern, start_offset) do
+    tokenize_recursive(pattern, [], "", start_offset, start_offset)
+  end
+
   defp tokenize(pattern) do
-    tokenize_recursive(pattern, [], "")
+    tokenize_with_positions(pattern, 0)
   end
 
   # Recursive tokenizer that handles brackets
-  defp tokenize_recursive("", acc, current) do
+  # Now tracks positions: offset is current byte position, token_start is where current token began
+  defp tokenize_recursive("", acc, current, offset, token_start) do
     if current == "" do
       Enum.reverse(acc)
     else
-      Enum.reverse([parse_token(String.trim(current)) | acc])
+      token = parse_token(String.trim(current))
+      Enum.reverse([{token, token_start, offset} | acc])
     end
   end
 
-  defp tokenize_recursive("[" <> rest, acc, current) do
+  defp tokenize_recursive("[" <> rest, acc, current, offset, token_start) do
     # Start of subdivision - save current token if any, then collect until ]
     acc =
-      if current != "" and String.trim(current) != "",
-        do: [parse_token(String.trim(current)) | acc],
-        else: acc
+      if current != "" and String.trim(current) != "" do
+        token = parse_token(String.trim(current))
+        [{token, token_start, offset} | acc]
+      else
+        acc
+      end
 
-    {subdivision, remaining} = collect_until_bracket_close(rest, [])
+    bracket_start = offset
+    {subdivision, remaining, bytes_consumed} = collect_until_bracket_close_with_length(rest, [])
+    bracket_end = offset + 1 + bytes_consumed  # +1 for the [ itself
 
     # Check for division modifier after subdivision: [bd sd]/2
-    {token, remaining} = parse_subdivision_with_modifiers(subdivision, remaining)
-    tokenize_recursive(remaining, [token | acc], "")
+    {token, remaining, extra_bytes} = parse_subdivision_with_modifiers_and_length(subdivision, remaining)
+    tokenize_recursive(remaining, [{token, bracket_start, bracket_end + extra_bytes} | acc], "", bracket_end + extra_bytes, bracket_end + extra_bytes)
   end
 
-  defp tokenize_recursive("<" <> rest, acc, current) do
+  defp tokenize_recursive("<" <> rest, acc, current, offset, token_start) do
     # Start of alternation - save current token if any, then collect until >
     acc =
-      if current != "" and String.trim(current) != "",
-        do: [parse_token(String.trim(current)) | acc],
-        else: acc
+      if current != "" and String.trim(current) != "" do
+        token = parse_token(String.trim(current))
+        [{token, token_start, offset} | acc]
+      else
+        acc
+      end
 
-    {alternation, remaining} = collect_until_angle_close(rest, [])
-    tokenize_recursive(remaining, [parse_alternation(alternation) | acc], "")
+    angle_start = offset
+    {alternation, remaining, bytes_consumed} = collect_until_angle_close_with_length(rest, [])
+    angle_end = offset + 1 + bytes_consumed
+
+    tokenize_recursive(remaining, [{parse_alternation(alternation), angle_start, angle_end} | acc], "", angle_end, angle_end)
   end
 
-  defp tokenize_recursive("{" <> rest, acc, current) do
+  defp tokenize_recursive("{" <> rest, acc, current, offset, token_start) do
     # Start of polymetric sequence - save current token if any, then collect until }
     acc =
-      if current != "" and String.trim(current) != "",
-        do: [parse_token(String.trim(current)) | acc],
-        else: acc
+      if current != "" and String.trim(current) != "" do
+        token = parse_token(String.trim(current))
+        [{token, token_start, offset} | acc]
+      else
+        acc
+      end
 
-    {polymetric, remaining} = collect_until_curly_close(rest, [])
+    curly_start = offset
+    {polymetric, remaining, bytes_consumed} = collect_until_curly_close_with_length(rest, [])
+    curly_end = offset + 1 + bytes_consumed
 
     # Check for subdivision modifier after polymetric: {bd sd}%8
-    {token, remaining} = parse_polymetric_with_modifiers(polymetric, remaining)
-    tokenize_recursive(remaining, [token | acc], "")
+    {token, remaining, extra_bytes} = parse_polymetric_with_modifiers_and_length(polymetric, remaining)
+    tokenize_recursive(remaining, [{token, curly_start, curly_end + extra_bytes} | acc], "", curly_end + extra_bytes, curly_end + extra_bytes)
   end
 
-  defp tokenize_recursive(<<char::utf8, rest::binary>>, acc, current) do
+  defp tokenize_recursive(<<char::utf8, rest::binary>>, acc, current, offset, token_start) do
     char_str = <<char::utf8>>
+    char_bytes = byte_size(char_str)
+    new_offset = offset + char_bytes
 
     cond do
       String.match?(char_str, ~r/\s/) ->
         # Whitespace - end current token
         if current == "" do
-          tokenize_recursive(rest, acc, "")
+          tokenize_recursive(rest, acc, "", new_offset, new_offset)
         else
-          tokenize_recursive(rest, [parse_token(String.trim(current)) | acc], "")
+          token = parse_token(String.trim(current))
+          tokenize_recursive(rest, [{token, token_start, offset} | acc], "", new_offset, new_offset)
         end
 
       char_str == "." and is_separator_dot?(current, rest) ->
         # Period as separator (not part of a number)
         if current == "" do
-          tokenize_recursive(rest, acc, "")
+          tokenize_recursive(rest, acc, "", new_offset, new_offset)
         else
-          tokenize_recursive(rest, [parse_token(String.trim(current)) | acc], "")
+          token = parse_token(String.trim(current))
+          tokenize_recursive(rest, [{token, token_start, offset} | acc], "", new_offset, new_offset)
         end
 
       true ->
         # Regular character - add to current token
-        tokenize_recursive(rest, acc, current <> char_str)
+        tokenize_recursive(rest, acc, current <> char_str, new_offset, token_start)
     end
+  end
+
+  # Legacy 3-arg version for internal calls that don't need positions
+  defp tokenize_recursive("", acc, current) do
+    tokenize_recursive("", acc, current, 0, 0)
+  end
+
+  defp tokenize_recursive("[" <> rest, acc, current) do
+    tokenize_recursive("[" <> rest, acc, current, 0, 0)
+  end
+
+  defp tokenize_recursive("<" <> rest, acc, current) do
+    tokenize_recursive("<" <> rest, acc, current, 0, 0)
+  end
+
+  defp tokenize_recursive("{" <> rest, acc, current) do
+    tokenize_recursive("{" <> rest, acc, current, 0, 0)
+  end
+
+  defp tokenize_recursive(<<char::utf8, rest::binary>>, acc, current) do
+    tokenize_recursive(<<char::utf8, rest::binary>>, acc, current, 0, 0)
   end
 
   # Check if a dot is a separator (not part of a decimal number)
@@ -418,6 +469,123 @@ defmodule UzuParser do
   # Handle unclosed curly bracket
   defp collect_until_curly_close("", acc) do
     {IO.iodata_to_binary(Enum.reverse(acc)), ""}
+  end
+
+  # ============================================================
+  # Position-tracking versions of collect functions
+  # These return {content, remaining, bytes_consumed}
+  # ============================================================
+
+  defp collect_until_bracket_close_with_length(str, acc) do
+    collect_until_bracket_close_with_length(str, acc, 0, 0)
+  end
+
+  defp collect_until_bracket_close_with_length("]" <> rest, acc, 0, bytes) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), rest, bytes + 1}  # +1 for ]
+  end
+
+  defp collect_until_bracket_close_with_length("]" <> rest, acc, depth, bytes) when depth > 0 do
+    collect_until_bracket_close_with_length(rest, ["]" | acc], depth - 1, bytes + 1)
+  end
+
+  defp collect_until_bracket_close_with_length("[" <> rest, acc, depth, bytes) do
+    collect_until_bracket_close_with_length(rest, ["[" | acc], depth + 1, bytes + 1)
+  end
+
+  defp collect_until_bracket_close_with_length(<<char::utf8, rest::binary>>, acc, depth, bytes) do
+    char_str = <<char::utf8>>
+    collect_until_bracket_close_with_length(rest, [char_str | acc], depth, bytes + byte_size(char_str))
+  end
+
+  defp collect_until_bracket_close_with_length("", acc, _depth, bytes) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), "", bytes}
+  end
+
+  defp collect_until_angle_close_with_length(str, acc) do
+    collect_until_angle_close_with_length(str, acc, 0)
+  end
+
+  defp collect_until_angle_close_with_length(">" <> rest, acc, bytes) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), rest, bytes + 1}  # +1 for >
+  end
+
+  defp collect_until_angle_close_with_length(<<char::utf8, rest::binary>>, acc, bytes) do
+    char_str = <<char::utf8>>
+    collect_until_angle_close_with_length(rest, [char_str | acc], bytes + byte_size(char_str))
+  end
+
+  defp collect_until_angle_close_with_length("", acc, bytes) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), "", bytes}
+  end
+
+  defp collect_until_curly_close_with_length(str, acc) do
+    collect_until_curly_close_with_length(str, acc, 0)
+  end
+
+  defp collect_until_curly_close_with_length("}" <> rest, acc, bytes) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), rest, bytes + 1}  # +1 for }
+  end
+
+  defp collect_until_curly_close_with_length(<<char::utf8, rest::binary>>, acc, bytes) do
+    char_str = <<char::utf8>>
+    collect_until_curly_close_with_length(rest, [char_str | acc], bytes + byte_size(char_str))
+  end
+
+  defp collect_until_curly_close_with_length("", acc, bytes) do
+    {IO.iodata_to_binary(Enum.reverse(acc)), "", bytes}
+  end
+
+  # ============================================================
+  # Position-tracking versions of modifier parsing
+  # These return {token, remaining, extra_bytes_consumed}
+  # ============================================================
+
+  defp parse_subdivision_with_modifiers_and_length(inner, "/" <> rest) do
+    {divisor_str, remaining} = collect_number(rest, [])
+
+    case parse_number(divisor_str) do
+      {divisor, ""} when divisor > 0 ->
+        extra = 1 + byte_size(divisor_str)  # "/" + number
+        {{:subdivision_division, parse_subdivision(inner), divisor}, remaining, extra}
+
+      _ ->
+        {parse_subdivision(inner), "/" <> rest, 0}
+    end
+  end
+
+  defp parse_subdivision_with_modifiers_and_length(inner, "*" <> rest) do
+    {count_str, remaining} = collect_number(rest, [])
+
+    case parse_number(count_str) do
+      {count, ""} when count > 0 ->
+        subdivision = parse_subdivision(inner)
+        extra = 1 + byte_size(count_str)  # "*" + number
+        {{:subdivision_repeat, subdivision, round(count)}, remaining, extra}
+
+      _ ->
+        {parse_subdivision(inner), "*" <> rest, 0}
+    end
+  end
+
+  defp parse_subdivision_with_modifiers_and_length(inner, remaining) do
+    {parse_subdivision(inner), remaining, 0}
+  end
+
+  defp parse_polymetric_with_modifiers_and_length(inner, "%" <> rest) do
+    {steps_str, remaining} = collect_number(rest, [])
+
+    case parse_number(steps_str) do
+      {steps, ""} when steps > 0 ->
+        extra = 1 + byte_size(steps_str)  # "%" + number
+        {{:polymetric_steps, parse_polymetric(inner), steps}, remaining, extra}
+
+      _ ->
+        {parse_polymetric(inner), "%" <> rest, 0}
+    end
+  end
+
+  defp parse_polymetric_with_modifiers_and_length(inner, remaining) do
+    {parse_polymetric(inner), remaining, 0}
   end
 
   # Parse individual token
@@ -1069,9 +1237,10 @@ defmodule UzuParser do
   end
 
   # Calculate actual timing for events
+  # Tokens may be {token, start_pos, end_pos} tuples or bare tokens
   defp calculate_timings(parsed_tokens) do
-    # Flatten any nested structures first
-    flattened = flatten_structure(parsed_tokens)
+    # Flatten any nested structures first, preserving positions
+    flattened = flatten_structure_with_positions(parsed_tokens)
 
     if length(flattened) == 0 do
       []
@@ -1081,17 +1250,74 @@ defmodule UzuParser do
     end
   end
 
+  # Flatten structure while preserving position info
+  # Input: list of {token, start, end} or bare tokens
+  # Output: list of {token, start, end} where positions may be nil for internal tokens
+  defp flatten_structure_with_positions(tokens) do
+    tokens
+    |> Enum.flat_map(&flatten_token_with_position/1)
+    |> process_elongations_with_positions()
+  end
+
+  # Flatten a token that may have position info
+  defp flatten_token_with_position({token, start_pos, end_pos}) do
+    # Flatten the inner token and attach positions to the first result
+    flattened = flatten_token(token)
+    attach_positions_to_first(flattened, start_pos, end_pos)
+  end
+
+  defp flatten_token_with_position(token) do
+    # Bare token without positions
+    flatten_token(token)
+    |> Enum.map(&wrap_token_no_position/1)
+  end
+
+  # Wrap a token with nil positions
+  defp wrap_token_no_position(token), do: {token, nil, nil}
+
+  # Attach positions to the first token in a list, rest get nil positions
+  defp attach_positions_to_first([], _start, _end), do: []
+  defp attach_positions_to_first([first | rest], start_pos, end_pos) do
+    [{first, start_pos, end_pos} | Enum.map(rest, &wrap_token_no_position/1)]
+  end
+
+  # Process elongations while preserving positions
+  defp process_elongations_with_positions(tokens) do
+    {result, _} =
+      Enum.reduce(tokens, {[], nil}, fn {token, start_pos, end_pos}, {acc, prev} ->
+        case token do
+          :elongate ->
+            case prev do
+              nil ->
+                {acc ++ [{:rest, nil, nil}], nil}
+
+              {prev_token, prev_start, _prev_end} ->
+                # Increase weight and extend end position
+                updated_token = increase_token_weight(prev_token)
+                updated = {updated_token, prev_start, end_pos}
+                {List.replace_at(acc, -1, updated), updated}
+            end
+
+          _ ->
+            {acc ++ [{token, start_pos, end_pos}], {token, start_pos, end_pos}}
+        end
+      end)
+
+    result
+  end
+
   # Calculate timings with weight support
+  # Tokens are now {token, start_pos, end_pos} tuples
   defp calculate_weighted_timings(tokens) do
-    # Calculate total weight
+    # Calculate total weight (unwrap positions)
     total_weight =
       tokens
-      |> Enum.map(&get_token_weight/1)
+      |> Enum.map(fn {token, _, _} -> get_token_weight(token) end)
       |> Enum.sum()
 
     # Assign time and duration based on weights
     {events, _current_time} =
-      Enum.reduce(tokens, {[], 0.0}, fn token, {events_acc, current_time} ->
+      Enum.reduce(tokens, {[], 0.0}, fn {token, src_start, src_end}, {events_acc, current_time} ->
         weight = get_token_weight(token)
         duration = weight / total_weight
 
@@ -1104,23 +1330,23 @@ defmodule UzuParser do
               # Store degree as jazz token in params
               sound = "^#{degree}"
               params = %{jazz_type: :degree, jazz_value: degree}
-              [Event.new(sound, current_time, duration: duration, params: params)]
+              [Event.new(sound, current_time, duration: duration, params: params, source_start: src_start, source_end: src_end)]
 
             {:chord, chord_symbol} when is_binary(chord_symbol) ->
               # Jazz chord symbol (not polyphonic chord)
               sound = "@#{chord_symbol}"
               params = %{jazz_type: :chord, jazz_value: chord_symbol}
-              [Event.new(sound, current_time, duration: duration, params: params)]
+              [Event.new(sound, current_time, duration: duration, params: params, source_start: src_start, source_end: src_end)]
 
             {:roman, roman} ->
               # Roman numeral chord
               sound = "@#{roman}"
               params = %{jazz_type: :roman, jazz_value: roman}
-              [Event.new(sound, current_time, duration: duration, params: params)]
+              [Event.new(sound, current_time, duration: duration, params: params, source_start: src_start, source_end: src_end)]
 
             {:sound, sound, sample, probability, _weight} ->
               params = if probability, do: %{probability: probability}, else: %{}
-              [Event.new(sound, current_time, duration: duration, sample: sample, params: params)]
+              [Event.new(sound, current_time, duration: duration, sample: sample, params: params, source_start: src_start, source_end: src_end)]
 
             {:sound_with_params, sound, sample, sound_params} ->
               # Remove internal _weight key before creating event
@@ -1130,12 +1356,15 @@ defmodule UzuParser do
                 Event.new(sound, current_time,
                   duration: duration,
                   sample: sample,
-                  params: clean_params
+                  params: clean_params,
+                  source_start: src_start,
+                  source_end: src_end
                 )
               ]
 
             {:chord, sounds} ->
               # Create multiple events at the same time for polyphony
+              # All sounds in chord share same source position
               Enum.map(sounds, fn
                 {:sound, sound, sample, probability, _weight} ->
                   params = if probability, do: %{probability: probability}, else: %{}
@@ -1143,7 +1372,9 @@ defmodule UzuParser do
                   Event.new(sound, current_time,
                     duration: duration,
                     sample: sample,
-                    params: params
+                    params: params,
+                    source_start: src_start,
+                    source_end: src_end
                   )
 
                 _ ->
@@ -1161,6 +1392,8 @@ defmodule UzuParser do
               [
                 Event.new(default_sound, current_time,
                   duration: duration,
+                  source_start: src_start,
+                  source_end: src_end,
                   sample: default_sample,
                   params: params
                 )
@@ -1177,7 +1410,9 @@ defmodule UzuParser do
                 Event.new(default_sound, current_time,
                   duration: duration,
                   sample: default_sample,
-                  params: params
+                  params: params,
+                  source_start: src_start,
+                  source_end: src_end
                 )
               ]
 
@@ -1189,7 +1424,9 @@ defmodule UzuParser do
                 Event.new(sound, current_time,
                   duration: duration,
                   sample: sample,
-                  params: params
+                  params: params,
+                  source_start: src_start,
+                  source_end: src_end
                 )
               ]
 
@@ -1202,7 +1439,9 @@ defmodule UzuParser do
                 Event.new(sound, current_time,
                   duration: duration,
                   sample: sample,
-                  params: params
+                  params: params,
+                  source_start: src_start,
+                  source_end: src_end
                 )
               ]
 
@@ -1216,7 +1455,9 @@ defmodule UzuParser do
                   Event.new(sound, current_time,
                     duration: duration,
                     sample: sample,
-                    params: params
+                    params: params,
+                    source_start: src_start,
+                    source_end: src_end
                   )
 
                 _ ->
@@ -1227,10 +1468,11 @@ defmodule UzuParser do
             {:polymetric, groups} ->
               # Each group is timed independently over the full duration
               # Process each group as its own mini-cycle
+              # Note: polymetric events don't get individual source positions
               groups
               |> Enum.flat_map(fn group_tokens ->
                 flattened = flatten_structure(group_tokens)
-                calculate_polymetric_group_events(flattened, current_time, duration)
+                calculate_polymetric_group_events(flattened, current_time, duration, src_start, src_end)
               end)
 
             {:polymetric_steps, inner_poly, steps} ->
@@ -1247,14 +1489,16 @@ defmodule UzuParser do
                       flattened,
                       current_time,
                       duration,
-                      steps
+                      steps,
+                      src_start,
+                      src_end
                     )
                   end)
 
                 {:subdivision, items} ->
                   # Single group, treat like subdivision with steps
                   flattened = flatten_structure(items)
-                  calculate_polymetric_stepped_events(flattened, current_time, duration, steps)
+                  calculate_polymetric_stepped_events(flattened, current_time, duration, steps, src_start, src_end)
 
                 _ ->
                   []
@@ -1272,7 +1516,7 @@ defmodule UzuParser do
 
   # Calculate events for polymetric with step control {pattern}%steps
   # Events are distributed across the specified number of steps
-  defp calculate_polymetric_stepped_events(tokens, start_time, total_duration, steps) do
+  defp calculate_polymetric_stepped_events(tokens, start_time, total_duration, steps, src_start, src_end) do
     if length(tokens) == 0 do
       []
     else
@@ -1303,7 +1547,9 @@ defmodule UzuParser do
                 Event.new(sound, start_time + time_offset,
                   duration: event_duration,
                   sample: sample,
-                  params: params
+                  params: params,
+                  source_start: src_start,
+                  source_end: src_end
                 )
 
               {:chord, sounds} ->
@@ -1314,7 +1560,9 @@ defmodule UzuParser do
                     Event.new(sound, start_time + time_offset,
                       duration: event_duration,
                       sample: sample,
-                      params: params
+                      params: params,
+                      source_start: src_start,
+                      source_end: src_end
                     )
 
                   _ ->
@@ -1341,7 +1589,7 @@ defmodule UzuParser do
   end
 
   # Calculate events for a polymetric group with its own timing
-  defp calculate_polymetric_group_events(tokens, start_time, total_duration) do
+  defp calculate_polymetric_group_events(tokens, start_time, total_duration, src_start, src_end) do
     if length(tokens) == 0 do
       []
     else
@@ -1362,7 +1610,7 @@ defmodule UzuParser do
 
               {:sound, sound, sample, probability, _weight} ->
                 params = if probability, do: %{probability: probability}, else: %{}
-                Event.new(sound, current_time, duration: duration, sample: sample, params: params)
+                Event.new(sound, current_time, duration: duration, sample: sample, params: params, source_start: src_start, source_end: src_end)
 
               {:chord, sounds} ->
                 # Return list for chord
@@ -1373,7 +1621,9 @@ defmodule UzuParser do
                     Event.new(sound, current_time,
                       duration: duration,
                       sample: sample,
-                      params: params
+                      params: params,
+                      source_start: src_start,
+                      source_end: src_end
                     )
 
                   _ ->
@@ -1498,6 +1748,14 @@ defmodule UzuParser do
   defp flatten_token(nil), do: []
   defp flatten_token(:rest), do: [:rest]
   defp flatten_token(:elongate), do: [:elongate]
+  # Handle position-wrapped tokens from internal tokenization (3-tuples where first element is token)
+  # Must check this early, but be specific about shape: {token, integer|nil, integer|nil}
+  defp flatten_token({token, start_pos, end_pos})
+       when (is_tuple(token) or is_atom(token)) and
+            (is_integer(start_pos) or is_nil(start_pos)) and
+            (is_integer(end_pos) or is_nil(end_pos)) do
+    flatten_token(token)
+  end
   defp flatten_token({:sound, _, _, _, _} = sound), do: [sound]
   defp flatten_token({:sound_with_params, _, _, _} = sound), do: [sound]
   defp flatten_token({:degree, _} = degree), do: [degree]

@@ -460,12 +460,12 @@ defmodule UzuParser do
   defp parse_subdivision(inner) do
     # Check if this subdivision contains polyphony (comma-separated at top level)
     # Only check for top-level commas (not inside nested brackets)
-    if has_top_level_comma?(inner) do
+    if UzuParser.Collectors.has_top_level_comma?(inner) do
       # Parse as a chord - flatten any repetitions so we get individual sounds
       # Use split_top_level_comma to respect nesting
       sounds =
         inner
-        |> split_top_level_comma()
+        |> UzuParser.Collectors.split_top_level_comma()
         |> Enum.map(&String.trim/1)
         |> Enum.reject(&(&1 == ""))
         |> Enum.map(&UzuParser.TokenParser.parse/1)
@@ -482,84 +482,6 @@ defmodule UzuParser do
 
       {:subdivision, subtokens}
     end
-  end
-
-  # Check if string has a comma at the top level (not inside nested brackets)
-  defp has_top_level_comma?(str) do
-    has_top_level_comma?(str, 0)
-  end
-
-  defp has_top_level_comma?("", _depth), do: false
-
-  defp has_top_level_comma?("," <> _rest, 0), do: true
-
-  defp has_top_level_comma?("[" <> rest, depth) do
-    has_top_level_comma?(rest, depth + 1)
-  end
-
-  defp has_top_level_comma?("]" <> rest, depth) do
-    has_top_level_comma?(rest, max(0, depth - 1))
-  end
-
-  defp has_top_level_comma?("{" <> rest, depth) do
-    has_top_level_comma?(rest, depth + 1)
-  end
-
-  defp has_top_level_comma?("}" <> rest, depth) do
-    has_top_level_comma?(rest, max(0, depth - 1))
-  end
-
-  defp has_top_level_comma?("<" <> rest, depth) do
-    has_top_level_comma?(rest, depth + 1)
-  end
-
-  defp has_top_level_comma?(">" <> rest, depth) do
-    has_top_level_comma?(rest, max(0, depth - 1))
-  end
-
-  defp has_top_level_comma?(<<_::utf8, rest::binary>>, depth) do
-    has_top_level_comma?(rest, depth)
-  end
-
-  # Split string by top-level commas only (respecting nesting)
-  defp split_top_level_comma(str) do
-    split_top_level_comma(str, [], "", 0)
-  end
-
-  defp split_top_level_comma("", parts, current, _depth) do
-    Enum.reverse([current | parts])
-  end
-
-  defp split_top_level_comma("," <> rest, parts, current, 0) do
-    split_top_level_comma(rest, [current | parts], "", 0)
-  end
-
-  defp split_top_level_comma("[" <> rest, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> "[", depth + 1)
-  end
-
-  defp split_top_level_comma("]" <> rest, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> "]", max(0, depth - 1))
-  end
-
-  defp split_top_level_comma("{" <> rest, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> "{", depth + 1)
-  end
-
-  defp split_top_level_comma("}" <> rest, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> "}", max(0, depth - 1))
-  end
-
-  defp split_top_level_comma("<" <> rest, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> "<", depth + 1)
-  end
-
-  defp split_top_level_comma(">" <> rest, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> ">", max(0, depth - 1))
-  end
-
-  defp split_top_level_comma(<<char::utf8, rest::binary>>, parts, current, depth) do
-    split_top_level_comma(rest, parts, current <> <<char::utf8>>, depth)
   end
 
   # Parse alternation: "bd sd hh" -> {:alternate, [options]}

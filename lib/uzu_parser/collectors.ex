@@ -163,4 +163,70 @@ defmodule UzuParser.Collectors do
       {IO.iodata_to_binary(Enum.reverse(acc)), str}
     end
   end
+
+  # ============================================================
+  # Top-level comma utilities
+  # ============================================================
+
+  @doc """
+  Check if string has a comma at the top level (not inside nested brackets).
+  """
+  def has_top_level_comma?(str) do
+    do_has_top_level_comma?(str, 0)
+  end
+
+  defp do_has_top_level_comma?("", _depth), do: false
+  defp do_has_top_level_comma?("," <> _rest, 0), do: true
+  defp do_has_top_level_comma?("[" <> rest, depth), do: do_has_top_level_comma?(rest, depth + 1)
+  defp do_has_top_level_comma?("]" <> rest, depth), do: do_has_top_level_comma?(rest, max(0, depth - 1))
+  defp do_has_top_level_comma?("{" <> rest, depth), do: do_has_top_level_comma?(rest, depth + 1)
+  defp do_has_top_level_comma?("}" <> rest, depth), do: do_has_top_level_comma?(rest, max(0, depth - 1))
+  defp do_has_top_level_comma?("<" <> rest, depth), do: do_has_top_level_comma?(rest, depth + 1)
+  defp do_has_top_level_comma?(">" <> rest, depth), do: do_has_top_level_comma?(rest, max(0, depth - 1))
+  defp do_has_top_level_comma?(<<_::utf8, rest::binary>>, depth), do: do_has_top_level_comma?(rest, depth)
+
+  @doc """
+  Split string by top-level commas only (respecting nesting).
+
+  Returns list of string parts.
+  """
+  def split_top_level_comma(str) do
+    do_split_top_level_comma(str, [], "", 0)
+  end
+
+  defp do_split_top_level_comma("", parts, current, _depth) do
+    Enum.reverse([current | parts])
+  end
+
+  defp do_split_top_level_comma("," <> rest, parts, current, 0) do
+    do_split_top_level_comma(rest, [current | parts], "", 0)
+  end
+
+  defp do_split_top_level_comma("[" <> rest, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> "[", depth + 1)
+  end
+
+  defp do_split_top_level_comma("]" <> rest, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> "]", max(0, depth - 1))
+  end
+
+  defp do_split_top_level_comma("{" <> rest, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> "{", depth + 1)
+  end
+
+  defp do_split_top_level_comma("}" <> rest, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> "}", max(0, depth - 1))
+  end
+
+  defp do_split_top_level_comma("<" <> rest, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> "<", depth + 1)
+  end
+
+  defp do_split_top_level_comma(">" <> rest, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> ">", max(0, depth - 1))
+  end
+
+  defp do_split_top_level_comma(<<char::utf8, rest::binary>>, parts, current, depth) do
+    do_split_top_level_comma(rest, parts, current <> <<char::utf8>>, depth)
+  end
 end

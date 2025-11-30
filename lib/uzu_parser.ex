@@ -455,73 +455,17 @@ defmodule UzuParser do
     {parse_polymetric(inner), remaining, 0}
   end
 
-  # Parse subdivision: "bd sd" -> {:subdivision, [{:sound, "bd"}, {:sound, "sd"}]}
-  # Or polyphony: "bd,sd" -> {:subdivision, [{:chord, [{:sound, "bd"}, {:sound, "sd"}]}]}
+  # Delegate to Structure module with tokenize/flatten callbacks
   defp parse_subdivision(inner) do
-    # Check if this subdivision contains polyphony (comma-separated at top level)
-    # Only check for top-level commas (not inside nested brackets)
-    if UzuParser.Collectors.has_top_level_comma?(inner) do
-      # Parse as a chord - flatten any repetitions so we get individual sounds
-      # Use split_top_level_comma to respect nesting
-      sounds =
-        inner
-        |> UzuParser.Collectors.split_top_level_comma()
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-        |> Enum.map(&UzuParser.TokenParser.parse/1)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.flat_map(&flatten_token/1)
-
-      {:subdivision, [{:chord, sounds}]}
-    else
-      # Parse as regular subdivision
-      subtokens =
-        inner
-        |> tokenize()
-        |> Enum.reject(&is_nil/1)
-
-      {:subdivision, subtokens}
-    end
+    UzuParser.Structure.parse_subdivision(inner, &tokenize/1, &flatten_token/1)
   end
 
-  # Parse alternation: "bd sd hh" -> {:alternate, [options]}
-  # Cycles through options sequentially based on cycle number
   defp parse_alternation(inner) do
-    options =
-      inner
-      |> String.split()
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.map(&UzuParser.TokenParser.parse/1)
-      |> Enum.reject(&is_nil/1)
-
-    case options do
-      [] -> nil
-      [single] -> single
-      multiple -> {:alternate, multiple}
-    end
+    UzuParser.Structure.parse_alternation(inner)
   end
 
-  # Parse polymetric sequence: "bd sd hh, cp" -> {:polymetric, [groups]}
-  # Each group is independently timed over the cycle
   defp parse_polymetric(inner) do
-    groups =
-      inner
-      |> String.split(",")
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.map(fn group ->
-        group
-        |> tokenize()
-        |> Enum.reject(&is_nil/1)
-      end)
-      |> Enum.reject(&(&1 == []))
-
-    case groups do
-      [] -> nil
-      [single] -> {:subdivision, single}
-      multiple -> {:polymetric, multiple}
-    end
+    UzuParser.Structure.parse_polymetric(inner, &tokenize/1)
   end
 
   # Calculate actual timing for events

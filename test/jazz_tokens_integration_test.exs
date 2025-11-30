@@ -1,4 +1,10 @@
-defmodule UzuParser.JazzTokensTest do
+defmodule UzuParser.JazzTokensIntegrationTest do
+  @moduledoc """
+  Integration tests for jazz token parsing through UzuParser.parse/1.
+
+  Unit tests for jazz token parsing are in test/uzu_parser/token_parser_test.exs.
+  """
+
   use ExUnit.Case, async: true
 
   describe "jazz scale degree tokens" do

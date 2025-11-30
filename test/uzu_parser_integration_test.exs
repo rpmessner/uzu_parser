@@ -1,4 +1,12 @@
-defmodule UzuParserTest do
+defmodule UzuParser.IntegrationTest do
+  @moduledoc """
+  Integration tests for UzuParser.parse/1.
+
+  These tests verify end-to-end behavior of the parser by testing
+  complete patterns through the public API. Module-specific unit tests
+  are located in test/uzu_parser/*.
+  """
+
   use ExUnit.Case, async: true
 
   alias UzuParser

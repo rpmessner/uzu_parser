@@ -243,7 +243,7 @@ defmodule UzuParser do
       end
 
     bracket_start = offset
-    {subdivision, remaining, bytes_consumed} = collect_until_bracket_close_with_length(rest, [])
+    {subdivision, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_bracket_close_with_length(rest)
     bracket_end = offset + 1 + bytes_consumed  # +1 for the [ itself
 
     # Check for division modifier after subdivision: [bd sd]/2
@@ -262,7 +262,7 @@ defmodule UzuParser do
       end
 
     angle_start = offset
-    {alternation, remaining, bytes_consumed} = collect_until_angle_close_with_length(rest, [])
+    {alternation, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_angle_close_with_length(rest)
     angle_end = offset + 1 + bytes_consumed
 
     tokenize_recursive(remaining, [{parse_alternation(alternation), angle_start, angle_end} | acc], "", angle_end, angle_end)
@@ -279,7 +279,7 @@ defmodule UzuParser do
       end
 
     curly_start = offset
-    {polymetric, remaining, bytes_consumed} = collect_until_curly_close_with_length(rest, [])
+    {polymetric, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_curly_close_with_length(rest)
     curly_end = offset + 1 + bytes_consumed
 
     # Check for subdivision modifier after polymetric: {bd sd}%8
@@ -350,7 +350,7 @@ defmodule UzuParser do
   # Parse subdivision with possible modifiers like /2 or *2
   defp parse_subdivision_with_modifiers(inner, "/" <> rest) do
     # Collect the divisor (digits until whitespace or end)
-    {divisor_str, remaining} = collect_number(rest, [])
+    {divisor_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(divisor_str) do
       {divisor, ""} when divisor > 0 ->
@@ -364,7 +364,7 @@ defmodule UzuParser do
 
   defp parse_subdivision_with_modifiers(inner, "*" <> rest) do
     # Collect the repetition count (digits until whitespace or end)
-    {count_str, remaining} = collect_number(rest, [])
+    {count_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(count_str) do
       {count, ""} when count > 0 ->
@@ -386,7 +386,7 @@ defmodule UzuParser do
   # Parse polymetric with possible modifiers like %8
   defp parse_polymetric_with_modifiers(inner, "%" <> rest) do
     # Collect the step count (digits until whitespace or end)
-    {steps_str, remaining} = collect_number(rest, [])
+    {steps_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(steps_str) do
       {steps, ""} when steps > 0 ->
@@ -402,146 +402,13 @@ defmodule UzuParser do
     {parse_polymetric(inner), remaining}
   end
 
-  # Collect digits until whitespace or end
-  defp collect_number("", acc), do: {IO.iodata_to_binary(Enum.reverse(acc)), ""}
-
-  defp collect_number(<<char::utf8, rest::binary>> = str, acc) do
-    if String.match?(<<char::utf8>>, ~r/[\d.]/) do
-      collect_number(rest, [<<char::utf8>> | acc])
-    else
-      {IO.iodata_to_binary(Enum.reverse(acc)), str}
-    end
-  end
-
-  # Collect everything until the matching closing bracket
-  # Tracks nesting depth to handle nested brackets correctly
-  # Uses iolist accumulator for O(n) performance instead of O(n²) string concatenation
-  defp collect_until_bracket_close(str, acc) do
-    collect_until_bracket_close(str, acc, 0)
-  end
-
-  defp collect_until_bracket_close("]" <> rest, acc, 0) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), rest}
-  end
-
-  defp collect_until_bracket_close("]" <> rest, acc, depth) when depth > 0 do
-    collect_until_bracket_close(rest, ["]" | acc], depth - 1)
-  end
-
-  defp collect_until_bracket_close("[" <> rest, acc, depth) do
-    collect_until_bracket_close(rest, ["[" | acc], depth + 1)
-  end
-
-  defp collect_until_bracket_close(<<char::utf8, rest::binary>>, acc, depth) do
-    collect_until_bracket_close(rest, [<<char::utf8>> | acc], depth)
-  end
-
-  # Handle unclosed bracket
-  defp collect_until_bracket_close("", acc, _depth) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), ""}
-  end
-
-  # Collect everything until the closing angle bracket
-  # Uses iolist accumulator for O(n) performance
-  defp collect_until_angle_close(">" <> rest, acc) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), rest}
-  end
-
-  defp collect_until_angle_close(<<char::utf8, rest::binary>>, acc) do
-    collect_until_angle_close(rest, [<<char::utf8>> | acc])
-  end
-
-  # Handle unclosed angle bracket
-  defp collect_until_angle_close("", acc) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), ""}
-  end
-
-  # Collect everything until the closing curly bracket
-  # Uses iolist accumulator for O(n) performance
-  defp collect_until_curly_close("}" <> rest, acc) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), rest}
-  end
-
-  defp collect_until_curly_close(<<char::utf8, rest::binary>>, acc) do
-    collect_until_curly_close(rest, [<<char::utf8>> | acc])
-  end
-
-  # Handle unclosed curly bracket
-  defp collect_until_curly_close("", acc) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), ""}
-  end
-
-  # ============================================================
-  # Position-tracking versions of collect functions
-  # These return {content, remaining, bytes_consumed}
-  # ============================================================
-
-  defp collect_until_bracket_close_with_length(str, acc) do
-    collect_until_bracket_close_with_length(str, acc, 0, 0)
-  end
-
-  defp collect_until_bracket_close_with_length("]" <> rest, acc, 0, bytes) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), rest, bytes + 1}  # +1 for ]
-  end
-
-  defp collect_until_bracket_close_with_length("]" <> rest, acc, depth, bytes) when depth > 0 do
-    collect_until_bracket_close_with_length(rest, ["]" | acc], depth - 1, bytes + 1)
-  end
-
-  defp collect_until_bracket_close_with_length("[" <> rest, acc, depth, bytes) do
-    collect_until_bracket_close_with_length(rest, ["[" | acc], depth + 1, bytes + 1)
-  end
-
-  defp collect_until_bracket_close_with_length(<<char::utf8, rest::binary>>, acc, depth, bytes) do
-    char_str = <<char::utf8>>
-    collect_until_bracket_close_with_length(rest, [char_str | acc], depth, bytes + byte_size(char_str))
-  end
-
-  defp collect_until_bracket_close_with_length("", acc, _depth, bytes) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), "", bytes}
-  end
-
-  defp collect_until_angle_close_with_length(str, acc) do
-    collect_until_angle_close_with_length(str, acc, 0)
-  end
-
-  defp collect_until_angle_close_with_length(">" <> rest, acc, bytes) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), rest, bytes + 1}  # +1 for >
-  end
-
-  defp collect_until_angle_close_with_length(<<char::utf8, rest::binary>>, acc, bytes) do
-    char_str = <<char::utf8>>
-    collect_until_angle_close_with_length(rest, [char_str | acc], bytes + byte_size(char_str))
-  end
-
-  defp collect_until_angle_close_with_length("", acc, bytes) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), "", bytes}
-  end
-
-  defp collect_until_curly_close_with_length(str, acc) do
-    collect_until_curly_close_with_length(str, acc, 0)
-  end
-
-  defp collect_until_curly_close_with_length("}" <> rest, acc, bytes) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), rest, bytes + 1}  # +1 for }
-  end
-
-  defp collect_until_curly_close_with_length(<<char::utf8, rest::binary>>, acc, bytes) do
-    char_str = <<char::utf8>>
-    collect_until_curly_close_with_length(rest, [char_str | acc], bytes + byte_size(char_str))
-  end
-
-  defp collect_until_curly_close_with_length("", acc, bytes) do
-    {IO.iodata_to_binary(Enum.reverse(acc)), "", bytes}
-  end
-
   # ============================================================
   # Position-tracking versions of modifier parsing
   # These return {token, remaining, extra_bytes_consumed}
   # ============================================================
 
   defp parse_subdivision_with_modifiers_and_length(inner, "/" <> rest) do
-    {divisor_str, remaining} = collect_number(rest, [])
+    {divisor_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(divisor_str) do
       {divisor, ""} when divisor > 0 ->
@@ -554,7 +421,7 @@ defmodule UzuParser do
   end
 
   defp parse_subdivision_with_modifiers_and_length(inner, "*" <> rest) do
-    {count_str, remaining} = collect_number(rest, [])
+    {count_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(count_str) do
       {count, ""} when count > 0 ->
@@ -572,7 +439,7 @@ defmodule UzuParser do
   end
 
   defp parse_polymetric_with_modifiers_and_length(inner, "%" <> rest) do
-    {steps_str, remaining} = collect_number(rest, [])
+    {steps_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(steps_str) do
       {steps, ""} when steps > 0 ->

@@ -259,4 +259,131 @@ defmodule UzuParser.IntegrationTest do
       end)
     end
   end
+
+  describe "source position tracking" do
+    test "simple sequence has correct positions" do
+      events = UzuParser.parse("bd sd")
+
+      [bd, sd] = events
+      # "bd sd"
+      #  01 34
+      assert bd.source_start == 0
+      assert bd.source_end == 2
+      assert sd.source_start == 3
+      assert sd.source_end == 5
+    end
+
+    test "positions map to correct substrings" do
+      pattern = "bd sd hh"
+      events = UzuParser.parse(pattern)
+
+      Enum.each(events, fn event ->
+        substring = String.slice(pattern, event.source_start, event.source_end - event.source_start)
+        assert substring == event.sound, "Expected #{event.sound} at [#{event.source_start}:#{event.source_end}], got '#{substring}'"
+      end)
+    end
+
+    test "subdivision preserves inner positions" do
+      pattern = "[bd sd]"
+      events = UzuParser.parse(pattern)
+
+      [bd, sd] = events
+      # "[bd sd]"
+      #  0123456
+      assert bd.source_start == 1
+      assert bd.source_end == 3
+      assert sd.source_start == 4
+      assert sd.source_end == 6
+
+      # Verify they map correctly
+      assert String.slice(pattern, bd.source_start, bd.source_end - bd.source_start) == "bd"
+      assert String.slice(pattern, sd.source_start, sd.source_end - sd.source_start) == "sd"
+    end
+
+    test "nested subdivision tracks each token individually" do
+      pattern = "[[bd] hh]"
+      events = UzuParser.parse(pattern)
+
+      [bd, hh] = events
+      # "[[bd] hh]"
+      #  012345678
+      assert bd.source_start == 2
+      assert bd.source_end == 4
+      assert hh.source_start == 6
+      assert hh.source_end == 8
+
+      assert String.slice(pattern, bd.source_start, bd.source_end - bd.source_start) == "bd"
+      assert String.slice(pattern, hh.source_start, hh.source_end - hh.source_start) == "hh"
+    end
+
+    test "mixed pattern with subdivision" do
+      pattern = "bd [sd hh] cp"
+      events = UzuParser.parse(pattern)
+
+      [bd, sd, hh, cp] = events
+      # "bd [sd hh] cp"
+      #  01234567890123
+      assert bd.source_start == 0
+      assert bd.source_end == 2
+      assert sd.source_start == 4
+      assert sd.source_end == 6
+      assert hh.source_start == 7
+      assert hh.source_end == 9
+      assert cp.source_start == 11
+      assert cp.source_end == 13
+    end
+
+    test "division operator preserves positions" do
+      pattern = "[sd sd]/2"
+      events = UzuParser.parse(pattern)
+
+      [sd1, sd2] = events
+      # "[sd sd]/2"
+      #  012345678
+      assert sd1.source_start == 1
+      assert sd1.source_end == 3
+      assert sd2.source_start == 4
+      assert sd2.source_end == 6
+    end
+
+    test "deeply nested subdivisions" do
+      pattern = "[[[bd]]]"
+      events = UzuParser.parse(pattern)
+
+      [bd] = events
+      # "[[[bd]]]"
+      #  01234567
+      assert bd.source_start == 3
+      assert bd.source_end == 5
+      assert String.slice(pattern, bd.source_start, bd.source_end - bd.source_start) == "bd"
+    end
+
+    test "multiple nested subdivisions" do
+      pattern = "[[bd sd] [hh cp]]"
+      events = UzuParser.parse(pattern)
+
+      assert length(events) == 4
+      [bd, sd, hh, cp] = events
+
+      # "[[bd sd] [hh cp]]"
+      #  01234567890123456
+      assert String.slice(pattern, bd.source_start, bd.source_end - bd.source_start) == "bd"
+      assert String.slice(pattern, sd.source_start, sd.source_end - sd.source_start) == "sd"
+      assert String.slice(pattern, hh.source_start, hh.source_end - hh.source_start) == "hh"
+      assert String.slice(pattern, cp.source_start, cp.source_end - cp.source_start) == "cp"
+    end
+
+    test "sample selection has correct positions" do
+      pattern = "bd:0 sd:1"
+      events = UzuParser.parse(pattern)
+
+      [bd, sd] = events
+      # "bd:0 sd:1"
+      #  012345678
+      assert bd.source_start == 0
+      assert bd.source_end == 4
+      assert sd.source_start == 5
+      assert sd.source_end == 9
+    end
+  end
 end

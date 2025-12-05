@@ -42,7 +42,9 @@ defmodule UzuParser.Timing do
   # Flatten a token that may have position info
   defp flatten_token_with_position({token, start_pos, end_pos}) do
     flattened = flatten_token(token)
-    attach_positions_to_first(flattened, start_pos, end_pos)
+    # Check if flattened results already have positions (from nested tokenization)
+    # If they do, preserve them. If not, attach outer positions.
+    attach_positions_preserving_existing(flattened, start_pos, end_pos)
   end
 
   defp flatten_token_with_position(token) do
@@ -50,11 +52,32 @@ defmodule UzuParser.Timing do
     |> Enum.map(&wrap_token_no_position/1)
   end
 
+  defp wrap_token_no_position({token, start_pos, end_pos})
+       when is_integer(start_pos) or is_nil(start_pos) do
+    # Already has position info, keep it
+    {token, start_pos, end_pos}
+  end
+
   defp wrap_token_no_position(token), do: {token, nil, nil}
 
-  defp attach_positions_to_first([], _start, _end), do: []
-  defp attach_positions_to_first([first | rest], start_pos, end_pos) do
-    [{first, start_pos, end_pos} | Enum.map(rest, &wrap_token_no_position/1)]
+  # Preserve existing positions from nested tokenization, only attach outer positions
+  # to items that don't have their own positions
+  defp attach_positions_preserving_existing([], _start, _end), do: []
+
+  defp attach_positions_preserving_existing(items, outer_start, outer_end) do
+    Enum.map(items, fn
+      # Already has positions from nested tokenization - keep them
+      {token, start_pos, end_pos} when is_integer(start_pos) and is_integer(end_pos) ->
+        {token, start_pos, end_pos}
+
+      # Position-wrapped but with nil positions - use outer
+      {token, nil, nil} ->
+        {token, outer_start, outer_end}
+
+      # Raw token without positions - use outer
+      token ->
+        {token, outer_start, outer_end}
+    end)
   end
 
   # Process elongations while preserving positions
@@ -239,6 +262,12 @@ defmodule UzuParser.Timing do
 
   defp stepped_token_to_event(:rest, _time, _duration, _src_start, _src_end), do: nil
 
+  # Handle position-wrapped tokens - use inner positions if available
+  defp stepped_token_to_event({token, token_src_start, token_src_end}, time, duration, _src_start, _src_end)
+       when is_integer(token_src_start) and is_integer(token_src_end) do
+    stepped_token_to_event(token, time, duration, token_src_start, token_src_end)
+  end
+
   defp stepped_token_to_event({:sound, sound, sample, probability, _weight}, time, duration, src_start, src_end) do
     params = if probability, do: %{probability: probability}, else: %{}
     Event.new(sound, time, duration: duration, sample: sample, params: params, source_start: src_start, source_end: src_end)
@@ -290,6 +319,12 @@ defmodule UzuParser.Timing do
 
   defp group_token_to_event(:rest, _time, _duration, _src_start, _src_end), do: nil
 
+  # Handle position-wrapped tokens - use inner positions if available
+  defp group_token_to_event({token, token_src_start, token_src_end}, time, duration, _src_start, _src_end)
+       when is_integer(token_src_start) and is_integer(token_src_end) do
+    group_token_to_event(token, time, duration, token_src_start, token_src_end)
+  end
+
   defp group_token_to_event({:sound, sound, sample, probability, _weight}, time, duration, src_start, src_end) do
     params = if probability, do: %{probability: probability}, else: %{}
     Event.new(sound, time, duration: duration, sample: sample, params: params, source_start: src_start, source_end: src_end)
@@ -310,6 +345,10 @@ defmodule UzuParser.Timing do
 
   # Get token weight
   defp get_token_weight(:rest), do: 1.0
+  # Handle position-wrapped tokens
+  defp get_token_weight({token, start_pos, end_pos})
+       when is_integer(start_pos) and is_integer(end_pos),
+       do: get_token_weight(token)
   defp get_token_weight({:sound, _, _, _, nil}), do: 1.0
   defp get_token_weight({:sound, _, _, _, weight}), do: weight
   defp get_token_weight({:sound_with_params, _, _, params}), do: Map.get(params, :_weight, 1.0)
@@ -404,12 +443,22 @@ defmodule UzuParser.Timing do
   def flatten_token(:rest), do: [:rest]
   def flatten_token(:elongate), do: [:elongate]
 
-  # Handle position-wrapped tokens
+  # Handle position-wrapped tokens - preserve the positions through flattening
   def flatten_token({token, start_pos, end_pos})
       when (is_tuple(token) or is_atom(token)) and
            (is_integer(start_pos) or is_nil(start_pos)) and
            (is_integer(end_pos) or is_nil(end_pos)) do
-    flatten_token(token)
+    # Flatten the token and wrap results with positions
+    flattened = flatten_token(token)
+    # Wrap each result with positions (they may or may not already have positions)
+    Enum.map(flattened, fn
+      # Already position-wrapped with real positions - keep them
+      {t, s, e} when is_integer(s) and is_integer(e) -> {t, s, e}
+      # Position-wrapped with nil - use our positions
+      {t, nil, nil} -> {t, start_pos, end_pos}
+      # Raw token - wrap with our positions
+      t -> {t, start_pos, end_pos}
+    end)
   end
 
   def flatten_token({:sound, _, _, _, _} = sound), do: [sound]
@@ -419,7 +468,29 @@ defmodule UzuParser.Timing do
   def flatten_token({:chord, chord_symbol}) when is_binary(chord_symbol), do: [{:chord, chord_symbol}]
   def flatten_token({:chord, sounds}) when is_list(sounds), do: [{:chord, sounds}]
   def flatten_token({:repeat, items}), do: Enum.flat_map(items, &flatten_token/1)
-  def flatten_token({:subdivision, items}), do: Enum.flat_map(items, &flatten_token/1)
+
+  # Subdivision items may be position-wrapped tuples {token, start, end}
+  # Preserve their positions through flattening
+  def flatten_token({:subdivision, items}) do
+    Enum.flat_map(items, fn
+      # Position-wrapped token
+      {token, start_pos, end_pos} when is_integer(start_pos) or is_nil(start_pos) ->
+        flattened = flatten_token(token)
+        # Preserve existing positions from nested tokenization
+        Enum.map(flattened, fn
+          # Already has positions - keep them
+          {t, s, e} when is_integer(s) and is_integer(e) -> {t, s, e}
+          # Position-wrapped with nil - use our positions
+          {t, nil, nil} -> {t, start_pos, end_pos}
+          # Raw token - wrap with our positions
+          t -> {t, start_pos, end_pos}
+        end)
+
+      # Non-wrapped token (backwards compatibility)
+      token ->
+        flatten_token(token)
+    end)
+  end
   def flatten_token({:random_choice, _options} = choice), do: [choice]
   def flatten_token({:alternate, _options} = alt), do: [alt]
   def flatten_token({:division, _, _, _} = div), do: [div]
@@ -429,12 +500,31 @@ defmodule UzuParser.Timing do
 
   def flatten_token({:subdivision_division, {:subdivision, items}, divisor}) do
     items
-    |> Enum.flat_map(&flatten_token/1)
-    |> Enum.map(&apply_division(&1, divisor))
+    |> Enum.flat_map(fn
+      # Position-wrapped token
+      {token, start_pos, end_pos} when is_integer(start_pos) or is_nil(start_pos) ->
+        flattened = flatten_token(token)
+        # Apply division and wrap with positions
+        Enum.map(flattened, fn t -> {apply_division(t, divisor), start_pos, end_pos} end)
+
+      # Non-wrapped token
+      token ->
+        flattened = flatten_token(token)
+        Enum.map(flattened, &apply_division(&1, divisor))
+    end)
   end
 
   def flatten_token({:subdivision_repeat, {:subdivision, items}, count}) do
-    flattened = Enum.flat_map(items, &flatten_token/1)
+    flattened = Enum.flat_map(items, fn
+      # Position-wrapped token
+      {token, start_pos, end_pos} when is_integer(start_pos) or is_nil(start_pos) ->
+        flat = flatten_token(token)
+        Enum.map(flat, fn t -> {t, start_pos, end_pos} end)
+
+      # Non-wrapped token
+      token ->
+        flatten_token(token)
+    end)
     List.duplicate(flattened, count) |> List.flatten()
   end
 

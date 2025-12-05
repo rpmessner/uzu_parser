@@ -166,11 +166,10 @@ defmodule UzuParser do
 
   Note: This stretches/compresses the polymetric pattern to fit the
   specified number of steps while maintaining internal ratios.
-
-  ## Future Features
-  - Pattern transformations: fast(), slow(), rev()
   """
 
+  alias UzuParser.Grammar
+  alias UzuParser.Interpreter
 
   @doc """
   Parses a pattern string into a list of events.
@@ -202,193 +201,18 @@ defmodule UzuParser do
   """
   def parse(pattern_string) when is_binary(pattern_string) do
     trimmed = String.trim(pattern_string)
-    # Calculate leading whitespace offset
-    leading_ws = byte_size(pattern_string) - byte_size(String.trim_leading(pattern_string))
 
-    trimmed
-    |> tokenize_with_positions(leading_ws)
-    |> UzuParser.Timing.calculate_timings()
-  end
-
-  # Split pattern into tokens, handling brackets specially
-  # Returns tokens with position info: {token, start_pos, end_pos}
-  defp tokenize_with_positions(pattern, start_offset) do
-    tokenize_recursive(pattern, [], "", start_offset, start_offset)
-  end
-
-  # Explicit 1-arity version for function captures
-  defp tokenize(pattern), do: tokenize_with_positions(pattern, 0)
-  defp tokenize(pattern, offset), do: tokenize_with_positions(pattern, offset)
-
-  # Recursive tokenizer that handles brackets
-  # Now tracks positions: offset is current byte position, token_start is where current token began
-  defp tokenize_recursive("", acc, current, offset, token_start) do
-    if current == "" do
-      Enum.reverse(acc)
+    if trimmed == "" do
+      []
     else
-      token = UzuParser.TokenParser.parse(String.trim(current))
-      Enum.reverse([{token, token_start, offset} | acc])
-    end
-  end
+      case Grammar.parse(trimmed) do
+        {:ok, ast} ->
+          Interpreter.interpret(ast)
 
-  defp tokenize_recursive("[" <> rest, acc, current, offset, token_start) do
-    # Start of subdivision - save current token if any, then collect until ]
-    acc =
-      if current != "" and String.trim(current) != "" do
-        token = UzuParser.TokenParser.parse(String.trim(current))
-        [{token, token_start, offset} | acc]
-      else
-        acc
+        {:error, _reason} ->
+          # Return empty list on parse error for backwards compatibility
+          []
       end
-
-    bracket_start = offset
-    inner_start = offset + 1  # Position where inner content starts (after '[')
-    {subdivision, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_bracket_close_with_length(rest)
-    bracket_end = offset + 1 + bytes_consumed  # +1 for the [ itself
-
-    # Check for division modifier after subdivision: [bd sd]/2
-    {token, remaining, extra_bytes} = parse_subdivision_with_modifiers_and_length(subdivision, remaining, inner_start)
-    tokenize_recursive(remaining, [{token, bracket_start, bracket_end + extra_bytes} | acc], "", bracket_end + extra_bytes, bracket_end + extra_bytes)
-  end
-
-  defp tokenize_recursive("<" <> rest, acc, current, offset, token_start) do
-    # Start of alternation - save current token if any, then collect until >
-    acc =
-      if current != "" and String.trim(current) != "" do
-        token = UzuParser.TokenParser.parse(String.trim(current))
-        [{token, token_start, offset} | acc]
-      else
-        acc
-      end
-
-    angle_start = offset
-    {alternation, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_angle_close_with_length(rest)
-    angle_end = offset + 1 + bytes_consumed
-
-    tokenize_recursive(remaining, [{parse_alternation(alternation), angle_start, angle_end} | acc], "", angle_end, angle_end)
-  end
-
-  defp tokenize_recursive("{" <> rest, acc, current, offset, token_start) do
-    # Start of polymetric sequence - save current token if any, then collect until }
-    acc =
-      if current != "" and String.trim(current) != "" do
-        token = UzuParser.TokenParser.parse(String.trim(current))
-        [{token, token_start, offset} | acc]
-      else
-        acc
-      end
-
-    curly_start = offset
-    {polymetric, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_curly_close_with_length(rest)
-    curly_end = offset + 1 + bytes_consumed
-
-    # Check for subdivision modifier after polymetric: {bd sd}%8
-    {token, remaining, extra_bytes} = parse_polymetric_with_modifiers_and_length(polymetric, remaining)
-    tokenize_recursive(remaining, [{token, curly_start, curly_end + extra_bytes} | acc], "", curly_end + extra_bytes, curly_end + extra_bytes)
-  end
-
-  defp tokenize_recursive(<<char::utf8, rest::binary>>, acc, current, offset, token_start) do
-    char_str = <<char::utf8>>
-    char_bytes = byte_size(char_str)
-    new_offset = offset + char_bytes
-
-    cond do
-      String.match?(char_str, ~r/\s/) ->
-        # Whitespace - end current token
-        if current == "" do
-          tokenize_recursive(rest, acc, "", new_offset, new_offset)
-        else
-          token = UzuParser.TokenParser.parse(String.trim(current))
-          tokenize_recursive(rest, [{token, token_start, offset} | acc], "", new_offset, new_offset)
-        end
-
-      char_str == "." and is_separator_dot?(current, rest) ->
-        # Period as separator (not part of a number)
-        if current == "" do
-          tokenize_recursive(rest, acc, "", new_offset, new_offset)
-        else
-          token = UzuParser.TokenParser.parse(String.trim(current))
-          tokenize_recursive(rest, [{token, token_start, offset} | acc], "", new_offset, new_offset)
-        end
-
-      true ->
-        # Regular character - add to current token
-        tokenize_recursive(rest, acc, current <> char_str, new_offset, token_start)
     end
-  end
-
-  # Check if a dot is a separator (not part of a decimal number)
-  # A dot is part of a number if it follows a digit and precedes a digit
-  defp is_separator_dot?(current, rest) do
-    # Not a number dot if: previous char is not a digit OR next char is not a digit
-    prev_is_digit = current != "" and String.match?(String.last(current), ~r/\d/)
-    next_is_digit = rest != "" and String.match?(String.first(rest), ~r/\d/)
-    not (prev_is_digit and next_is_digit)
-  end
-
-  # ============================================================
-  # Position-tracking versions of modifier parsing
-  # These return {token, remaining, extra_bytes_consumed}
-  # ============================================================
-
-  defp parse_subdivision_with_modifiers_and_length(inner, "/" <> rest, inner_start) do
-    {divisor_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
-
-    case UzuParser.TokenParser.parse_number(divisor_str) do
-      {divisor, ""} when divisor > 0 ->
-        extra = 1 + byte_size(divisor_str)  # "/" + number
-        {{:subdivision_division, parse_subdivision(inner, inner_start), divisor}, remaining, extra}
-
-      _ ->
-        {parse_subdivision(inner, inner_start), "/" <> rest, 0}
-    end
-  end
-
-  defp parse_subdivision_with_modifiers_and_length(inner, "*" <> rest, inner_start) do
-    {count_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
-
-    case UzuParser.TokenParser.parse_number(count_str) do
-      {count, ""} when count > 0 ->
-        subdivision = parse_subdivision(inner, inner_start)
-        extra = 1 + byte_size(count_str)  # "*" + number
-        {{:subdivision_repeat, subdivision, round(count)}, remaining, extra}
-
-      _ ->
-        {parse_subdivision(inner, inner_start), "*" <> rest, 0}
-    end
-  end
-
-  defp parse_subdivision_with_modifiers_and_length(inner, remaining, inner_start) do
-    {parse_subdivision(inner, inner_start), remaining, 0}
-  end
-
-  defp parse_polymetric_with_modifiers_and_length(inner, "%" <> rest) do
-    {steps_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
-
-    case UzuParser.TokenParser.parse_number(steps_str) do
-      {steps, ""} when steps > 0 ->
-        extra = 1 + byte_size(steps_str)  # "%" + number
-        {{:polymetric_steps, parse_polymetric(inner), steps}, remaining, extra}
-
-      _ ->
-        {parse_polymetric(inner), "%" <> rest, 0}
-    end
-  end
-
-  defp parse_polymetric_with_modifiers_and_length(inner, remaining) do
-    {parse_polymetric(inner), remaining, 0}
-  end
-
-  # Delegate to Structure module with tokenize/flatten callbacks
-  defp parse_subdivision(inner, inner_start) do
-    UzuParser.Structure.parse_subdivision(inner, inner_start, &tokenize/2, &UzuParser.Timing.flatten_token/1)
-  end
-
-  defp parse_alternation(inner) do
-    UzuParser.Structure.parse_alternation(inner)
-  end
-
-  defp parse_polymetric(inner) do
-    UzuParser.Structure.parse_polymetric(inner, &tokenize/1)
   end
 end

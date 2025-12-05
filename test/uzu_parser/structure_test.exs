@@ -4,8 +4,8 @@ defmodule UzuParser.StructureTest do
   alias UzuParser.Structure
   alias UzuParser.TokenParser
 
-  # Helper to simulate simple tokenization
-  defp simple_tokenize(str) do
+  # Helper to simulate simple tokenization (accepts offset for position tracking)
+  defp simple_tokenize(str, _offset \\ 0) do
     str
     |> String.split()
     |> Enum.map(&TokenParser.parse/1)
@@ -16,9 +16,9 @@ defmodule UzuParser.StructureTest do
   defp flatten_token({:repeat, items}), do: items
   defp flatten_token(token), do: [token]
 
-  describe "parse_subdivision/3" do
+  describe "parse_subdivision/4" do
     test "parses simple subdivision" do
-      result = Structure.parse_subdivision("bd sd", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd sd", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, tokens} = result
       assert length(tokens) == 2
@@ -27,14 +27,14 @@ defmodule UzuParser.StructureTest do
     end
 
     test "parses subdivision with multiple tokens" do
-      result = Structure.parse_subdivision("bd sd hh cp", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd sd hh cp", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, tokens} = result
       assert length(tokens) == 4
     end
 
     test "parses chord with comma separator" do
-      result = Structure.parse_subdivision("bd,sd", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd,sd", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, [{:chord, sounds}]} = result
       assert length(sounds) == 2
@@ -43,14 +43,14 @@ defmodule UzuParser.StructureTest do
     end
 
     test "parses chord with three sounds" do
-      result = Structure.parse_subdivision("bd,sd,hh", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd,sd,hh", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, [{:chord, sounds}]} = result
       assert length(sounds) == 3
     end
 
     test "parses chord with sample selection" do
-      result = Structure.parse_subdivision("bd:0,sd:1", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd:0,sd:1", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, [{:chord, sounds}]} = result
       assert Enum.at(sounds, 0) == {:sound, "bd", 0, nil, nil}
@@ -59,7 +59,7 @@ defmodule UzuParser.StructureTest do
 
     test "filters out nil tokens from tokenizer" do
       # Tokenizer might return nil for empty strings
-      tokenizer = fn str ->
+      tokenizer = fn str, _offset ->
         str
         |> String.split()
         |> Enum.map(fn
@@ -68,14 +68,14 @@ defmodule UzuParser.StructureTest do
         end)
       end
 
-      result = Structure.parse_subdivision("bd  sd", tokenizer, &flatten_token/1)
+      result = Structure.parse_subdivision("bd  sd", 0, tokenizer, &flatten_token/1)
 
       assert {:subdivision, tokens} = result
       refute nil in tokens
     end
 
     test "handles rests in subdivisions" do
-      result = Structure.parse_subdivision("bd ~ sd", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd ~ sd", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, tokens} = result
       assert length(tokens) == 3
@@ -83,7 +83,7 @@ defmodule UzuParser.StructureTest do
     end
 
     test "flattens repetition in chord" do
-      result = Structure.parse_subdivision("bd*2,sd", &simple_tokenize/1, &flatten_token/1)
+      result = Structure.parse_subdivision("bd*2,sd", 0, &simple_tokenize/2, &flatten_token/1)
 
       assert {:subdivision, [{:chord, sounds}]} = result
       assert length(sounds) == 3

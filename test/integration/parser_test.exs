@@ -1,4 +1,4 @@
-defmodule UzuParser.IntegrationTest do
+defmodule UzuParser.Integration.ParserTest do
   @moduledoc """
   Integration tests for UzuParser.parse/1.
 

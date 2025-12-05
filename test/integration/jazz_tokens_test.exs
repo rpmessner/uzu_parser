@@ -1,4 +1,4 @@
-defmodule UzuParser.JazzTokensIntegrationTest do
+defmodule UzuParser.Integration.JazzTokensTest do
   @moduledoc """
   Integration tests for jazz token parsing through UzuParser.parse/1.
 

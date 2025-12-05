@@ -216,9 +216,9 @@ defmodule UzuParser do
     tokenize_recursive(pattern, [], "", start_offset, start_offset)
   end
 
-  defp tokenize(pattern) do
-    tokenize_with_positions(pattern, 0)
-  end
+  # Explicit 1-arity version for function captures
+  defp tokenize(pattern), do: tokenize_with_positions(pattern, 0)
+  defp tokenize(pattern, offset), do: tokenize_with_positions(pattern, offset)
 
   # Recursive tokenizer that handles brackets
   # Now tracks positions: offset is current byte position, token_start is where current token began
@@ -242,11 +242,12 @@ defmodule UzuParser do
       end
 
     bracket_start = offset
+    inner_start = offset + 1  # Position where inner content starts (after '[')
     {subdivision, remaining, bytes_consumed} = UzuParser.Collectors.collect_until_bracket_close_with_length(rest)
     bracket_end = offset + 1 + bytes_consumed  # +1 for the [ itself
 
     # Check for division modifier after subdivision: [bd sd]/2
-    {token, remaining, extra_bytes} = parse_subdivision_with_modifiers_and_length(subdivision, remaining)
+    {token, remaining, extra_bytes} = parse_subdivision_with_modifiers_and_length(subdivision, remaining, inner_start)
     tokenize_recursive(remaining, [{token, bracket_start, bracket_end + extra_bytes} | acc], "", bracket_end + extra_bytes, bracket_end + extra_bytes)
   end
 
@@ -330,35 +331,35 @@ defmodule UzuParser do
   # These return {token, remaining, extra_bytes_consumed}
   # ============================================================
 
-  defp parse_subdivision_with_modifiers_and_length(inner, "/" <> rest) do
+  defp parse_subdivision_with_modifiers_and_length(inner, "/" <> rest, inner_start) do
     {divisor_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(divisor_str) do
       {divisor, ""} when divisor > 0 ->
         extra = 1 + byte_size(divisor_str)  # "/" + number
-        {{:subdivision_division, parse_subdivision(inner), divisor}, remaining, extra}
+        {{:subdivision_division, parse_subdivision(inner, inner_start), divisor}, remaining, extra}
 
       _ ->
-        {parse_subdivision(inner), "/" <> rest, 0}
+        {parse_subdivision(inner, inner_start), "/" <> rest, 0}
     end
   end
 
-  defp parse_subdivision_with_modifiers_and_length(inner, "*" <> rest) do
+  defp parse_subdivision_with_modifiers_and_length(inner, "*" <> rest, inner_start) do
     {count_str, remaining} = UzuParser.Collectors.collect_number(rest, [])
 
     case UzuParser.TokenParser.parse_number(count_str) do
       {count, ""} when count > 0 ->
-        subdivision = parse_subdivision(inner)
+        subdivision = parse_subdivision(inner, inner_start)
         extra = 1 + byte_size(count_str)  # "*" + number
         {{:subdivision_repeat, subdivision, round(count)}, remaining, extra}
 
       _ ->
-        {parse_subdivision(inner), "*" <> rest, 0}
+        {parse_subdivision(inner, inner_start), "*" <> rest, 0}
     end
   end
 
-  defp parse_subdivision_with_modifiers_and_length(inner, remaining) do
-    {parse_subdivision(inner), remaining, 0}
+  defp parse_subdivision_with_modifiers_and_length(inner, remaining, inner_start) do
+    {parse_subdivision(inner, inner_start), remaining, 0}
   end
 
   defp parse_polymetric_with_modifiers_and_length(inner, "%" <> rest) do
@@ -379,8 +380,8 @@ defmodule UzuParser do
   end
 
   # Delegate to Structure module with tokenize/flatten callbacks
-  defp parse_subdivision(inner) do
-    UzuParser.Structure.parse_subdivision(inner, &tokenize/1, &UzuParser.Timing.flatten_token/1)
+  defp parse_subdivision(inner, inner_start) do
+    UzuParser.Structure.parse_subdivision(inner, inner_start, &tokenize/2, &UzuParser.Timing.flatten_token/1)
   end
 
   defp parse_alternation(inner) do

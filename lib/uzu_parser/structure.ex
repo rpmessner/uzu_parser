@@ -21,12 +21,14 @@ defmodule UzuParser.Structure do
 
   ## Parameters
   - `inner` - the string content inside brackets
-  - `tokenize_fn` - function(string) to tokenize nested content
+  - `inner_start` - byte offset where inner content starts (for position tracking)
+  - `tokenize_fn` - function(string, offset) to tokenize nested content
   - `flatten_token_fn` - function to flatten tokens (for chord sounds)
   """
-  def parse_subdivision(inner, tokenize_fn, flatten_token_fn) do
+  def parse_subdivision(inner, inner_start, tokenize_fn, flatten_token_fn) do
     if Collectors.has_top_level_comma?(inner) do
       # Parse as a chord - flatten any repetitions so we get individual sounds
+      # TODO: Track individual positions within comma-separated chords
       sounds =
         inner
         |> Collectors.split_top_level_comma()
@@ -38,9 +40,9 @@ defmodule UzuParser.Structure do
 
       {:subdivision, [{:chord, sounds}]}
     else
-      # Parse as regular subdivision
+      # Parse as regular subdivision with correct position offset
       subtokens =
-        tokenize_fn.(inner)
+        tokenize_fn.(inner, inner_start)
         |> Enum.reject(&is_nil/1)
 
       {:subdivision, subtokens}

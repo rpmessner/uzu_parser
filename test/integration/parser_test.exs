@@ -14,8 +14,9 @@ defmodule UzuParser.Integration.ParserTest do
   defp assert_positions_match(pattern, events) do
     Enum.each(events, fn event ->
       substring = String.slice(pattern, event.source_start, event.source_end - event.source_start)
+
       assert String.starts_with?(substring, event.sound) or substring == event.sound,
-        "Position mismatch: expected '#{event.sound}' at [#{event.source_start}:#{event.source_end}], got '#{substring}'"
+             "Position mismatch: expected '#{event.sound}' at [#{event.source_start}:#{event.source_end}], got '#{substring}'"
     end)
   end
 

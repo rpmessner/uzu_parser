@@ -572,7 +572,7 @@ defmodule UzuParser.Grammar do
         {n, ""} when n >= 1 and n <= 13 ->
           # Valid scale degree - include jazz params
           value = if value_str == numeric_str, do: n, else: value_str
-          %{jazz_type: :degree, jazz_value: value}
+          %{harmony_type: :degree, harmony_value: value}
 
         _ ->
           # Invalid scale degree (0, 14+, or non-numeric) - treat as regular sound
@@ -603,7 +603,7 @@ defmodule UzuParser.Grammar do
     value = String.trim_leading(chord_str, "@")
 
     # Determine if it's a roman numeral or chord symbol
-    jazz_type = if is_roman_numeral?(value), do: :roman, else: :chord
+    harmony_type = if is_roman_numeral?(value), do: :roman, else: :chord
 
     item = %{
       type: :atom,
@@ -615,7 +615,7 @@ defmodule UzuParser.Grammar do
       probability: nil,
       division: nil,
       euclidean: nil,
-      params: %{jazz_type: jazz_type, jazz_value: value},
+      params: %{harmony_type: harmony_type, harmony_value: value},
       source_start: offset - byte_size(chord_str),
       source_end: offset
     }

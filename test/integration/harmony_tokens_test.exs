@@ -1,6 +1,6 @@
-defmodule UzuParser.Integration.JazzTokensTest do
+defmodule UzuParser.Integration.HarmonyTokensTest do
   @moduledoc """
-  Integration tests for jazz token parsing through UzuParser.parse/1.
+  Integration tests for harmony token parsing through UzuParser.parse/1.
 
   Tests scale degrees (^1, ^b7), chord symbols (@Dm7), and roman numerals (@V7).
   """
@@ -12,8 +12,8 @@ defmodule UzuParser.Integration.JazzTokensTest do
       for degree <- 1..7 do
         [event] = UzuParser.parse("^#{degree}")
         assert event.sound == "^#{degree}"
-        assert event.params.jazz_type == :degree
-        assert event.params.jazz_value == degree
+        assert event.params.harmony_type == :degree
+        assert event.params.harmony_value == degree
       end
     end
 
@@ -21,23 +21,23 @@ defmodule UzuParser.Integration.JazzTokensTest do
       events = UzuParser.parse("^9 ^11 ^13")
 
       assert length(events) == 3
-      assert Enum.map(events, & &1.params.jazz_value) == [9, 11, 13]
-      assert Enum.all?(events, &(&1.params.jazz_type == :degree))
+      assert Enum.map(events, & &1.params.harmony_value) == [9, 11, 13]
+      assert Enum.all?(events, &(&1.params.harmony_type == :degree))
     end
 
     test "parses flatted degrees ^b3, ^b7" do
       for degree <- ["b3", "b7"] do
         [event] = UzuParser.parse("^#{degree}")
-        assert event.params.jazz_type == :degree
-        assert event.params.jazz_value == degree
+        assert event.params.harmony_type == :degree
+        assert event.params.harmony_value == degree
       end
     end
 
     test "parses sharped degrees ^#5, ^#11" do
       for degree <- ["#5", "#11"] do
         [event] = UzuParser.parse("^#{degree}")
-        assert event.params.jazz_type == :degree
-        assert event.params.jazz_value == degree
+        assert event.params.harmony_type == :degree
+        assert event.params.harmony_value == degree
       end
     end
 
@@ -64,8 +64,8 @@ defmodule UzuParser.Integration.JazzTokensTest do
       for {pattern, expected_value} <- chords do
         [event] = UzuParser.parse(pattern)
         assert event.sound == pattern
-        assert event.params.jazz_type == :chord
-        assert event.params.jazz_value == expected_value
+        assert event.params.harmony_type == :chord
+        assert event.params.harmony_value == expected_value
       end
     end
 
@@ -73,8 +73,8 @@ defmodule UzuParser.Integration.JazzTokensTest do
       events = UzuParser.parse("@Dm7 @G7 @Cmaj7")
 
       assert length(events) == 3
-      assert Enum.map(events, & &1.params.jazz_value) == ["Dm7", "G7", "Cmaj7"]
-      assert Enum.all?(events, &(&1.params.jazz_type == :chord))
+      assert Enum.map(events, & &1.params.harmony_value) == ["Dm7", "G7", "Cmaj7"]
+      assert Enum.all?(events, &(&1.params.harmony_type == :chord))
     end
   end
 
@@ -90,8 +90,8 @@ defmodule UzuParser.Integration.JazzTokensTest do
       for {pattern, expected_value, expected_type} <- romans do
         [event] = UzuParser.parse(pattern)
         assert event.sound == pattern
-        assert event.params.jazz_type == expected_type
-        assert event.params.jazz_value == expected_value
+        assert event.params.harmony_type == expected_type
+        assert event.params.harmony_value == expected_value
       end
     end
 
@@ -106,8 +106,8 @@ defmodule UzuParser.Integration.JazzTokensTest do
 
       for {pattern, expected_value} <- romans do
         [event] = UzuParser.parse(pattern)
-        assert event.params.jazz_type == :roman
-        assert event.params.jazz_value == expected_value
+        assert event.params.harmony_type == :roman
+        assert event.params.harmony_value == expected_value
       end
     end
 
@@ -115,7 +115,7 @@ defmodule UzuParser.Integration.JazzTokensTest do
       events = UzuParser.parse("@ii7 @V7 @Imaj7")
 
       assert length(events) == 3
-      assert Enum.map(events, & &1.params.jazz_value) == ["ii7", "V7", "Imaj7"]
+      assert Enum.map(events, & &1.params.harmony_value) == ["ii7", "V7", "Imaj7"]
     end
   end
 
@@ -124,21 +124,21 @@ defmodule UzuParser.Integration.JazzTokensTest do
       events = UzuParser.parse("[^1 ^3 ^5]")
 
       assert length(events) == 3
-      assert Enum.all?(events, &(&1.params.jazz_type == :degree))
+      assert Enum.all?(events, &(&1.params.harmony_type == :degree))
     end
 
     test "chords in brackets maintain jazz params" do
       events = UzuParser.parse("[@Dm7 @G7]")
 
       assert length(events) == 2
-      assert Enum.all?(events, &(&1.params.jazz_type == :chord))
+      assert Enum.all?(events, &(&1.params.harmony_type == :chord))
     end
 
     test "romans in brackets maintain jazz params" do
       events = UzuParser.parse("[@ii @V @I]")
 
       assert length(events) == 3
-      assert Enum.all?(events, &(&1.params.jazz_type == :roman))
+      assert Enum.all?(events, &(&1.params.harmony_type == :roman))
     end
   end
 
@@ -147,19 +147,20 @@ defmodule UzuParser.Integration.JazzTokensTest do
       events = UzuParser.parse("^1 bd ^3 sd")
 
       assert length(events) == 4
-      assert Enum.at(events, 0).params.jazz_type == :degree
+      assert Enum.at(events, 0).params.harmony_type == :degree
       assert Enum.at(events, 1).sound == "bd"
       assert Enum.at(events, 1).params == %{}
-      assert Enum.at(events, 2).params.jazz_type == :degree
+      assert Enum.at(events, 2).params.harmony_type == :degree
       assert Enum.at(events, 3).sound == "sd"
     end
 
     test "chords with rests" do
       events = UzuParser.parse("@ii ~ @V ~")
-      jazz_events = Enum.filter(events, &Map.has_key?(&1.params, :jazz_type))
+      jazz_events = Enum.filter(events, &Map.has_key?(&1.params, :harmony_type))
 
       assert length(jazz_events) == 2
-      assert length(events) == 2  # rests produce no events
+      # rests produce no events
+      assert length(events) == 2
     end
   end
 

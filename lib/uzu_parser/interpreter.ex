@@ -52,6 +52,7 @@ defmodule UzuParser.Interpreter do
       %{repeat: n} when is_integer(n) and n > 1 ->
         # Repeat the subdivision n times
         step = duration / n
+
         Enum.flat_map(0..(n - 1), fn i ->
           interpret(inner, start_time + i * step, step)
         end)
@@ -80,15 +81,17 @@ defmodule UzuParser.Interpreter do
     default = get_default_from_items(items)
     params = Map.merge(default.params || %{}, %{alternate: options})
 
-    [Event.new(
-      default.sound,
-      start_time,
-      duration: duration,
-      sample: default.sample,
-      params: params,
-      source_start: default.source_start,
-      source_end: default.source_end
-    )]
+    [
+      Event.new(
+        default.sound,
+        start_time,
+        duration: duration,
+        sample: default.sample,
+        params: params,
+        source_start: default.source_start,
+        source_end: default.source_end
+      )
+    ]
   end
 
   def interpret(%{type: :polymetric, children: children} = node, start_time, duration) do
@@ -118,15 +121,17 @@ defmodule UzuParser.Interpreter do
 
     params = %{random_choice: options}
 
-    [Event.new(
-      default.value,
-      start_time,
-      duration: duration,
-      sample: default[:sample],
-      params: params,
-      source_start: node[:source_start],
-      source_end: node[:source_end]
-    )]
+    [
+      Event.new(
+        default.value,
+        start_time,
+        duration: duration,
+        sample: default[:sample],
+        params: params,
+        source_start: node[:source_start],
+        source_end: node[:source_end]
+      )
+    ]
   end
 
   def interpret(other, start_time, duration) do
@@ -215,12 +220,14 @@ defmodule UzuParser.Interpreter do
     case atom do
       %{repeat: n} when is_integer(n) and n > 1 ->
         step = duration / n
+
         Enum.map(0..(n - 1), fn i ->
           %{event | time: start_time + i * step, duration: step}
         end)
 
       %{replicate: n} when is_integer(n) and n > 1 ->
         step = duration / n
+
         Enum.map(0..(n - 1), fn i ->
           %{event | time: start_time + i * step, duration: step}
         end)
@@ -342,7 +349,7 @@ defmodule UzuParser.Interpreter do
 
   # Extract items from sequence in various formats
   defp extract_sequence_items({:sequence, items}), do: items
-  defp extract_sequence_items([sequence: items]), do: items
+  defp extract_sequence_items(sequence: items), do: items
   defp extract_sequence_items(items) when is_list(items), do: items
   defp extract_sequence_items(_), do: []
 

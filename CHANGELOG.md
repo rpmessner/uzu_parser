@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-12-07
+
+### Changed
+- **NimbleParsec rewrite** - Complete parser rewrite using NimbleParsec for better performance and maintainability
+- **AST interpreter** - New interpreter module for evaluating parsed AST
+- **Module extraction** - Extracted focused modules: Timing, Structure, TokenParser, Euclidean, Collectors
+- **Source position tracking** - Events now include source positions for error reporting
+
+### Infrastructure
+- CI matrix updated for Elixir 1.17-1.19 with OTP 27-28
+- Added lefthook for pre-commit formatting
+- Added CLAUDE.md project documentation
+
+## [0.4.0] - 2025-12-01
+
+### Changed
+- Internal refactoring and test improvements
+
 ## [0.3.0] - 2025-11-25
 
 ### Added
@@ -60,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Subdivisions: `"bd [sd sd] hh"`
 - Repetition: `"bd*4"`
 
+[0.5.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.5.0
+[0.4.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.4.0
 [0.3.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.3.0
 [0.2.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.2.0
 [0.1.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.1.0

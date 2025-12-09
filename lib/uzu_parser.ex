@@ -1,9 +1,9 @@
 defmodule UzuParser do
   @moduledoc """
-  Parses Uzu mini-notation pattern strings into lists of timed events.
+  Parses Uzu mini-notation pattern strings into AST.
 
-  The parser converts text-based pattern notation into structured event data
-  that can be scheduled and played back.
+  This module provides the grammar parsing for Uzu pattern notation.
+  For pattern interpretation and event generation, use UzuPattern.
 
   ## Supported Syntax
 
@@ -169,50 +169,29 @@ defmodule UzuParser do
   """
 
   alias UzuParser.Grammar
-  alias UzuParser.Interpreter
 
   @doc """
-  Parses a pattern string into a list of events.
+  Parses a pattern string into an AST.
 
-  Events are returned with time values between 0.0 and 1.0, representing
-  their position within a single cycle.
+  Returns `{:ok, ast}` on success, `{:error, reason}` on failure.
+
+  For pattern interpretation and event generation, use `UzuPattern.parse/1`.
 
   ## Examples
 
-      iex> UzuParser.parse("bd sd hh sd")
-      [
-        %Event{sound: "bd", sample: nil, time: 0.0, duration: 0.25},
-        %Event{sound: "sd", sample: nil, time: 0.25, duration: 0.25},
-        %Event{sound: "hh", sample: nil, time: 0.5, duration: 0.25},
-        %Event{sound: "sd", sample: nil, time: 0.75, duration: 0.25}
-      ]
+      iex> UzuParser.parse("bd sd")
+      {:ok, [{:sound, "bd", 0, 2}, {:sound, "sd", 3, 5}]}
 
-      iex> UzuParser.parse("bd ~ sd ~")
-      [
-        %Event{sound: "bd", sample: nil, time: 0.0, duration: 0.25},
-        %Event{sound: "sd", sample: nil, time: 0.5, duration: 0.25}
-      ]
-
-      iex> UzuParser.parse("bd:0 sd:1")
-      [
-        %Event{sound: "bd", sample: 0, time: 0.0, duration: 0.5},
-        %Event{sound: "sd", sample: 1, time: 0.5, duration: 0.5}
-      ]
+      iex> UzuParser.parse("[bd sd]")
+      {:ok, [{:subdivision, [{:sound, "bd", 1, 3}, {:sound, "sd", 4, 6}], 0, 7}]}
   """
   def parse(pattern_string) when is_binary(pattern_string) do
     trimmed = String.trim(pattern_string)
 
     if trimmed == "" do
-      []
+      {:ok, []}
     else
-      case Grammar.parse(trimmed) do
-        {:ok, ast} ->
-          Interpreter.interpret(ast)
-
-        {:error, _reason} ->
-          # Return empty list on parse error for backwards compatibility
-          []
-      end
+      Grammar.parse(trimmed)
     end
   end
 end

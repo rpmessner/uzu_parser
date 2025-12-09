@@ -359,17 +359,49 @@ defmodule UzuParser.Interpreter do
   end
 
   defp item_to_option_data(%{type: :atom} = atom) do
-    %{sound: atom.value, sample: atom[:sample], probability: atom[:probability]}
+    %{
+      sound: atom.value,
+      sample: atom[:sample],
+      probability: atom[:probability],
+      source_start: atom[:source_start],
+      source_end: atom[:source_end]
+    }
   end
 
-  defp item_to_option_data(%{type: :rest}) do
-    %{sound: nil, sample: nil, probability: nil}
+  defp item_to_option_data(%{type: :rest} = rest) do
+    %{
+      sound: nil,
+      sample: nil,
+      probability: nil,
+      source_start: rest[:source_start],
+      source_end: rest[:source_end]
+    }
+  end
+
+  # Handle subdivisions inside alternation - interpret them as nested patterns
+  defp item_to_option_data(%{type: :subdivision} = sub) do
+    events = interpret(sub, 0.0, 1.0)
+
+    %{
+      sound: nil,
+      sample: nil,
+      probability: nil,
+      events: events,
+      source_start: sub[:source_start],
+      source_end: sub[:source_end]
+    }
   end
 
   defp item_to_option_data(_), do: %{sound: nil, sample: nil, probability: nil}
 
   defp atom_to_option_data(%{type: :atom} = atom) do
-    %{sound: atom.value, sample: atom[:sample], probability: atom[:probability]}
+    %{
+      sound: atom.value,
+      sample: atom[:sample],
+      probability: atom[:probability],
+      source_start: atom[:source_start],
+      source_end: atom[:source_end]
+    }
   end
 
   defp atom_to_option_data(_), do: %{sound: nil, sample: nil, probability: nil}

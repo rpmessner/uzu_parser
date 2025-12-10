@@ -30,27 +30,31 @@ defmodule UzuParser.Grammar do
   # Basic Tokens
   # ============================================================
 
-  # Whitespace
-  optional_ws = ascii_string([?\s, ?\t], min: 0)
+  # Whitespace (spaces, tabs, newlines, carriage returns)
+  optional_ws = ascii_string([?\s, ?\t, ?\n, ?\r], min: 0)
 
-  # Numbers
+  # Numbers (with optional negative sign)
   integer_part = ascii_string([?0..?9], min: 1)
+  optional_negative = optional(string("-"))
 
   float_number =
-    integer_part
+    optional_negative
+    |> concat(integer_part)
     |> string(".")
     |> concat(integer_part)
     |> reduce({Enum, :join, [""]})
     |> map({String, :to_float, []})
 
   integer_number =
-    integer_part
+    optional_negative
+    |> concat(integer_part)
+    |> reduce({Enum, :join, [""]})
     |> map({String, :to_integer, []})
 
   number = choice([float_number, integer_number])
 
-  # Sound name characters (letters, numbers, some special chars)
-  sound_char = ascii_char([?a..?z, ?A..?Z, ?0..?9, ?-, ?#, ?^])
+  # Sound name characters (letters, numbers, some special chars including underscore)
+  sound_char = ascii_char([?a..?z, ?A..?Z, ?0..?9, ?-, ?#, ?^, ?_])
 
   # Basic sound name: bd, sd, hh, 808, etc.
   sound_name =
@@ -60,8 +64,11 @@ defmodule UzuParser.Grammar do
   # Rest token
   rest = string("~") |> replace(:rest)
 
-  # Elongation token
-  elongation = string("_") |> replace(:elongation)
+  # Elongation token - standalone underscore only (not followed by alphanumeric)
+  elongation =
+    string("_")
+    |> lookahead_not(ascii_char([?a..?z, ?A..?Z, ?0..?9, ?_]))
+    |> replace(:elongation)
 
   # ============================================================
   # Jazz Tokens (scale degrees, chords, roman numerals)
@@ -326,15 +333,21 @@ defmodule UzuParser.Grammar do
     ])
   )
 
-  # Separator between sequence items (whitespace or period)
+  # Separator between sequence items (whitespace, period, or implicit between brackets)
+  # Adjacent brackets like "][" or "><" are implicit separators
   separator =
-    times(
-      choice([
-        ascii_string([?\s, ?\t], min: 1),
-        string(".") |> lookahead_not(ascii_char([?0..?9]))
-      ]),
-      min: 1
-    )
+    choice([
+      # Explicit whitespace or period separator
+      times(
+        choice([
+          ascii_string([?\s, ?\t, ?\n, ?\r], min: 1),
+          string(".") |> lookahead_not(ascii_char([?0..?9]))
+        ]),
+        min: 1
+      ),
+      # Implicit separator: lookahead for opening bracket/angle (allows [a][b], <a><b>, [a]<b>)
+      lookahead(ascii_char([?[, ?<, ?{]))
+    ])
 
   # Sequence content (space or period separated items)
   defcombinatorp(

@@ -4,7 +4,9 @@ Parser for Uzu pattern mini-notation, used in live coding and algorithmic music 
 
 ## Overview
 
-UzuParser converts text-based pattern notation into structured, timed musical events. It's designed for live coding environments and algorithmic music systems, providing a simple yet expressive syntax for creating rhythmic and melodic patterns.
+UzuParser converts text-based pattern notation into an Abstract Syntax Tree (AST). It's designed for live coding environments and algorithmic music systems, providing a simple yet expressive syntax for creating rhythmic and melodic patterns.
+
+**Note:** UzuParser handles parsing only. For event generation and pattern transformations, see [UzuPattern](https://github.com/rpmessner/uzu_pattern).
 
 ## Installation
 
@@ -13,7 +15,7 @@ Add `uzu_parser` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:uzu_parser, "~> 0.1.0"}
+    {:uzu_parser, "~> 0.5.0"}
     # Or for local development:
     # {:uzu_parser, path: "../uzu_parser"}
   ]
@@ -23,13 +25,21 @@ end
 ## Quick Start
 
 ```elixir
-# Parse a simple pattern
-UzuParser.parse("bd sd hh sd")
+# Parse a pattern - returns AST
+{:ok, ast} = UzuParser.parse("bd sd hh")
+# => {:ok, {:sequence, [
+#      %{type: :atom, value: "bd", source_start: 0, source_end: 2},
+#      %{type: :atom, value: "sd", source_start: 3, source_end: 5},
+#      %{type: :atom, value: "hh", source_start: 6, source_end: 8}
+#    ]}}
+
+# For timed events, use uzu_pattern:
+pattern = UzuPattern.parse("bd sd hh")
+events = UzuPattern.Pattern.query(pattern, 0)
 # => [
-#   %UzuParser.Event{sound: "bd", time: 0.0, duration: 0.25},
-#   %UzuParser.Event{sound: "sd", time: 0.25, duration: 0.25},
-#   %UzuParser.Event{sound: "hh", time: 0.5, duration: 0.25},
-#   %UzuParser.Event{sound: "sd", time: 0.75, duration: 0.25}
+#   %UzuPattern.Event{sound: "bd", time: 0.0, duration: 0.333...},
+#   %UzuPattern.Event{sound: "sd", time: 0.333..., duration: 0.333...},
+#   %UzuPattern.Event{sound: "hh", time: 0.666..., duration: 0.333...}
 # ]
 ```
 
@@ -37,10 +47,10 @@ UzuParser.parse("bd sd hh sd")
 
 ### Basic Sequences
 
-Space-separated sounds are evenly distributed across one cycle (0.0 to 1.0):
+Space-separated sounds create a sequence:
 
 ```elixir
-UzuParser.parse("bd sd hh sd")  # 4 events at times 0.0, 0.25, 0.5, 0.75
+UzuParser.parse("bd sd hh sd")  # 4 elements in sequence
 ```
 
 ### Rests
@@ -53,7 +63,7 @@ UzuParser.parse("bd ~ sd ~")  # kick and snare on alternating beats
 
 ### Subdivisions
 
-Brackets create faster divisions within a step:
+Brackets create subdivisions within a step:
 
 ```elixir
 UzuParser.parse("bd [sd sd] hh")  # snare plays twice as fast
@@ -66,156 +76,148 @@ Asterisk multiplies elements:
 
 ```elixir
 UzuParser.parse("bd*4")      # equivalent to "bd bd bd bd"
-UzuParser.parse("bd*2 sd")   # two kicks, one snare
+UzuParser.parse("[bd sd]*2") # repeat the subdivision
+```
+
+### Division (Slow)
+
+Slash spreads pattern across cycles:
+
+```elixir
+UzuParser.parse("[bd sd]/2")  # pattern takes 2 cycles to complete
 ```
 
 ### Sample Selection
 
-Colon selects different samples/variations:
+Colon selects sample variants:
 
 ```elixir
-UzuParser.parse("bd:0")         # kick drum, sample 0
-UzuParser.parse("bd:1 bd:2")    # different kick drum samples
-UzuParser.parse("bd:0*4")       # repeat sample 0 four times
-UzuParser.parse("bd:0 sd:1 hh:2")  # each sound uses a different sample
+UzuParser.parse("bd:0 bd:1 bd:2")  # different kick drum samples
 ```
 
 ### Polyphony (Chords)
 
-Comma within brackets plays multiple sounds simultaneously:
+Comma within brackets plays sounds simultaneously:
 
 ```elixir
 UzuParser.parse("[bd,sd]")        # kick and snare together
-UzuParser.parse("[bd,sd,hh]")     # three sounds at once
-UzuParser.parse("bd [sd,hh] cp")  # chord on second beat
-UzuParser.parse("[bd:0,sd:1]")    # chord with sample selection
+UzuParser.parse("[c3,e3,g3]")     # C major chord
 ```
 
-### Random Removal (Probability)
+### Probability
 
-Question mark adds probability - events may or may not play:
+Question mark adds probability:
 
 ```elixir
-UzuParser.parse("bd?")            # 50% chance to play
-UzuParser.parse("bd?0.25")        # 25% chance to play
-UzuParser.parse("bd sd? hh")      # only sd is probabilistic
-UzuParser.parse("bd:0?0.75")      # sample selection + probability
+UzuParser.parse("bd?")       # 50% chance to play
+UzuParser.parse("bd?0.25")   # 25% chance to play
 ```
 
-The parser stores probability in the event's `params` field. The playback system decides whether to play each event based on this value.
+### Weight / Elongation
 
-### Elongation (Temporal Weight)
-
-At sign specifies relative duration/weight of events:
+At sign specifies relative duration:
 
 ```elixir
-UzuParser.parse("bd@2 sd")        # kick twice as long as snare (2/3 vs 1/3)
-UzuParser.parse("[bd sd@3 hh]")   # snare 3x longer than bd and hh
-UzuParser.parse("bd@1.5 sd")      # fractional weights supported
+UzuParser.parse("bd@2 sd")   # kick twice as long as snare
 ```
 
-Events are assigned time and duration proportionally based on their weights. Default weight is 1.0 if not specified.
-
-### Replication
-
-Exclamation mark repeats events (similar to `*` but clearer intent):
+Underscore extends the previous sound:
 
 ```elixir
-UzuParser.parse("bd!3")           # three bd events
-UzuParser.parse("bd!2 sd")        # two kicks, one snare
-UzuParser.parse("[bd!2 sd]")      # replication in subdivision
+UzuParser.parse("bd _ sd")   # kick held for 2/3, snare for 1/3
 ```
-
-Note: In this parser, `!` and `*` produce identical results. Both create separate steps rather than subdividing time.
-
-### Random Choice
-
-Pipe randomly selects one option per evaluation:
-
-```elixir
-UzuParser.parse("bd|sd|hh")       # pick one each time
-UzuParser.parse("[bd|cp] sd")     # randomize first beat
-UzuParser.parse("bd:0|sd:1")      # with sample selection
-```
-
-The parser stores all options in the event's `params` field. The playback system decides which option to play using random selection.
 
 ### Alternation
 
-Angle brackets cycle through options sequentially:
+Angle brackets cycle through options:
 
 ```elixir
-UzuParser.parse("<bd sd hh>")     # bd on cycle 1, sd on 2, hh on 3, repeats
-UzuParser.parse("<bd sd> hh")     # alternate kick pattern
-UzuParser.parse("<bd:0 sd:1>")    # with sample selection
+UzuParser.parse("<bd sd hh>")  # bd on cycle 0, sd on cycle 1, hh on cycle 2
 ```
 
-The parser stores all options in the event's `params` field. The playback system uses the cycle number to select which option to play.
+### Polymetric
 
-### Complex Patterns
-
-Combine features for expressive patterns:
+Curly braces create independent timing:
 
 ```elixir
-# Realistic drum pattern
-UzuParser.parse("bd sd [hh hh] sd")
-
-# Layered pattern with repetition and subdivisions
-UzuParser.parse("bd*4 ~ [sd sd] ~")
-
-# Nested subdivisions and rests
-UzuParser.parse("[bd ~ sd ~] hh")
+UzuParser.parse("{bd sd, hh hh hh}")  # 2-against-3 polyrhythm
 ```
 
-## Event Structure
+### Euclidean Rhythms
 
-Each parsed event contains:
-
-- `sound` - The sound/sample name (string)
-- `sample` - Sample number (integer >= 0, or nil for default)
-- `time` - Position in the cycle (0.0 to 1.0)
-- `duration` - How long the event lasts (0.0 to 1.0)
-- `params` - Additional parameters (map, for future extensions)
+Parentheses create Euclidean patterns:
 
 ```elixir
-%UzuParser.Event{
-  sound: "bd",
-  sample: 0,
-  time: 0.0,
-  duration: 0.25,
-  params: %{}
-}
+UzuParser.parse("bd(3,8)")      # 3 hits distributed over 8 steps
+UzuParser.parse("bd(3,8,1)")    # with rotation offset
 ```
 
-## Future Features
+### Random Choice
 
-- Parameters: `"bd|gain:0.8|speed:2"`
-- Euclidean rhythms: `"bd(3,8)"` (3 hits in 8 steps)
+Pipe randomly selects one option:
 
-## Pattern Transformations
+```elixir
+UzuParser.parse("bd|sd|hh")  # pick one randomly per cycle
+```
 
-For pattern transformations like `fast`, `slow`, `rev`, `stack`, `cat`, `every`, and `jux`, see [UzuPattern](https://github.com/rpmessner/uzu_pattern) - the pattern orchestration library that builds on UzuParser.
+### Parameters
+
+Pipe with key:value sets parameters:
+
+```elixir
+UzuParser.parse("bd|gain:0.8|speed:2")
+```
+
+### Jazz/Harmony Extensions
+
+Scale degrees, chord symbols, and roman numerals:
+
+```elixir
+UzuParser.parse("^1 ^3 ^5 ^b7")    # scale degrees
+UzuParser.parse("@Dm7 @G7 @Cmaj7") # chord symbols
+UzuParser.parse("@ii @V @I")       # roman numerals
+```
+
+## AST Structure
+
+The parser returns an AST with node types:
+
+- `:sequence` - Sequential elements
+- `:stack` - Polyphonic (simultaneous) elements
+- `:subdivision` - Bracketed group with optional modifiers
+- `:alternation` - Angle bracket alternation
+- `:polymetric` - Curly brace polymetric group
+- `:atom` - Sound/note with optional modifiers
+- `:rest` - Silence
+- `:elongation` - Underscore continuation
+
+Each atom node includes:
+- `value` - Sound name
+- `sample` - Sample number (if `:n` specified)
+- `repeat` - Repetition count (if `*n` specified)
+- `euclidean` - `[k, n, offset]` (if `(k,n)` specified)
+- `probability` - Float (if `?` specified)
+- `weight` - Float (if `@n` specified)
+- `params` - Map of parameters
+- `source_start`, `source_end` - Position in source string
 
 ## Ecosystem Role
-
-UzuParser is part of the Elixir music ecosystem:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   UzuParser     │────▶│   UzuPattern    │────▶│    Waveform     │
-│   (parsing)     │     │  (transforms)   │     │    (audio)      │
-│                 │     │                 │     │                 │
-│ • parse/1       │     │ • Pattern struct│     │ • OSC           │
-│ • mini-notation │     │ • fast/slow/rev │     │ • SuperDirt     │
-│ • [%Event{}]    │     │ • stack/cat     │     │ • MIDI          │
-│                 │     │ • every/when    │     │ • scheduling    │
-│                 │     │ • query/2       │     │                 │
+│   (parsing)     │     │ (interpretation │     │    (audio)      │
+│                 │     │  & transforms)  │     │                 │
+│ • parse/1       │     │ • Interpreter   │     │ • OSC           │
+│ • mini-notation │     │ • Pattern struct│     │ • SuperDirt     │
+│ • AST output    │     │ • fast/slow/rev │     │ • Web Audio     │
+│                 │     │ • query/2       │     │ • scheduling    │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-- **UzuParser**: Parses mini-notation strings into event lists
-- **UzuPattern**: Applies transformations to patterns (fast, slow, rev, stack, cat, every, jux)
-- **Waveform**: Handles audio output via OSC/SuperDirt/MIDI
+- **UzuParser**: Parses mini-notation strings into AST
+- **UzuPattern**: Interprets AST into patterns, applies transformations
+- **Waveform**: Handles audio output via OSC/SuperDirt/Web Audio
 
 ## Development
 

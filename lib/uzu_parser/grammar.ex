@@ -218,7 +218,7 @@ defmodule UzuParser.Grammar do
     |> post_traverse({:build_subdivision, []})
   )
 
-  # Alternation: <bd sd hh>
+  # Alternation: <bd sd hh>, <bd sd>*2, <bd sd>/2
   defcombinatorp(
     :alternation_inner,
     ignore(string("<"))
@@ -226,6 +226,7 @@ defmodule UzuParser.Grammar do
     |> ignore(optional_ws)
     |> ignore(string(">"))
     |> tag(:alternation_content)
+    |> optional(choice([repetition_modifier, division_modifier]))
     |> post_traverse({:build_alternation, []})
   )
 
@@ -477,15 +478,16 @@ defmodule UzuParser.Grammar do
 
   # Build alternation structure
   defp build_alternation(rest, args, context, _line, offset) do
-    {content, _modifiers} = extract_content_and_modifiers(args, :alternation_content)
+    {content, modifiers} = extract_content_and_modifiers(args, :alternation_content)
 
-    wrapped = %{
+    base = %{
       type: :alternation,
       children: content,
       source_start: nil,
       source_end: offset
     }
 
+    wrapped = apply_modifiers(base, modifiers)
     {rest, [wrapped], context}
   end
 

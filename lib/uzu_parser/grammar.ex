@@ -98,11 +98,11 @@ defmodule UzuParser.Grammar do
     |> concat(integer_number)
     |> unwrap_and_tag(:repeat)
 
-  # Replication: !3, !4
+  # Replication: !3, !4, or bare ! (defaults to 1)
   replication_modifier =
     ignore(string("!"))
-    |> concat(integer_number)
-    |> unwrap_and_tag(:replicate)
+    |> optional(integer_number)
+    |> tag(:replicate)
 
   # Division: /2, /4
   division_modifier =
@@ -206,7 +206,7 @@ defmodule UzuParser.Grammar do
   # Structures (recursive via defcombinatorp)
   # ============================================================
 
-  # Subdivision: [bd sd]
+  # Subdivision: [bd sd], [bd sd]*2, [bd sd]/2, [bd sd]!, [bd sd]!3, [bd sd]?, [bd sd]?0.5
   defcombinatorp(
     :subdivision_inner,
     ignore(string("["))
@@ -214,11 +214,13 @@ defmodule UzuParser.Grammar do
     |> ignore(optional_ws)
     |> ignore(string("]"))
     |> tag(:subdivision_content)
-    |> optional(choice([repetition_modifier, division_modifier]))
+    |> optional(
+      choice([repetition_modifier, division_modifier, replication_modifier, probability_modifier])
+    )
     |> post_traverse({:build_subdivision, []})
   )
 
-  # Alternation: <bd sd hh>, <bd sd>*2, <bd sd>/2
+  # Alternation: <bd sd hh>, <bd sd>*2, <bd sd>/2, <bd sd>!, <bd sd>!3, <bd sd>?, <bd sd>?0.5
   defcombinatorp(
     :alternation_inner,
     ignore(string("<"))
@@ -226,11 +228,19 @@ defmodule UzuParser.Grammar do
     |> ignore(optional_ws)
     |> ignore(string(">"))
     |> tag(:alternation_content)
-    |> optional(choice([repetition_modifier, division_modifier]))
+    |> optional(
+      choice([repetition_modifier, division_modifier, replication_modifier, probability_modifier])
+    )
     |> post_traverse({:build_alternation, []})
   )
 
-  # Polymetric: {bd sd, hh}
+  # Steps modifier for polymetric: %4
+  steps_modifier =
+    ignore(string("%"))
+    |> concat(integer_number)
+    |> unwrap_and_tag(:steps)
+
+  # Polymetric: {bd sd, hh}, {bd sd}%4, {bd sd}*2, {bd sd}/2, {bd sd}?, {bd sd}?0.5
   defcombinatorp(
     :polymetric_inner,
     ignore(string("{"))
@@ -239,9 +249,7 @@ defmodule UzuParser.Grammar do
     |> ignore(string("}"))
     |> tag(:polymetric_content)
     |> optional(
-      ignore(string("%"))
-      |> concat(integer_number)
-      |> unwrap_and_tag(:steps)
+      choice([steps_modifier, repetition_modifier, division_modifier, probability_modifier])
     )
     |> post_traverse({:build_polymetric, []})
   )
@@ -342,7 +350,7 @@ defmodule UzuParser.Grammar do
       sample: Keyword.get(modifiers, :sample),
       weight: Keyword.get(modifiers, :weight, 1.0),
       repeat: Keyword.get(modifiers, :repeat),
-      replicate: Keyword.get(modifiers, :replicate),
+      replicate: extract_replicate(Keyword.get(modifiers, :replicate)),
       probability: extract_probability(Keyword.get(modifiers, :probability)),
       division: Keyword.get(modifiers, :division),
       euclidean: Keyword.get(modifiers, :euclidean),
@@ -362,6 +370,10 @@ defmodule UzuParser.Grammar do
   defp extract_probability(nil), do: nil
   defp extract_probability([]), do: 0.5
   defp extract_probability([value]), do: value
+
+  defp extract_replicate(nil), do: nil
+  defp extract_replicate([]), do: 1
+  defp extract_replicate([value]), do: value
 
   defp extract_params(modifiers) do
     modifiers
@@ -386,7 +398,7 @@ defmodule UzuParser.Grammar do
       sample: Keyword.get(modifiers, :sample),
       weight: Keyword.get(modifiers, :weight, 1.0),
       repeat: Keyword.get(modifiers, :repeat),
-      replicate: Keyword.get(modifiers, :replicate),
+      replicate: extract_replicate(Keyword.get(modifiers, :replicate)),
       probability: extract_probability(Keyword.get(modifiers, :probability)),
       division: Keyword.get(modifiers, :division),
       euclidean: Keyword.get(modifiers, :euclidean),
@@ -520,6 +532,8 @@ defmodule UzuParser.Grammar do
       {:repeat, n}, acc -> Map.put(acc, :repeat, n)
       {:division, n}, acc -> Map.put(acc, :division, n)
       {:steps, n}, acc -> Map.put(acc, :steps, n)
+      {:replicate, vals}, acc -> Map.put(acc, :replicate, extract_replicate(vals))
+      {:probability, vals}, acc -> Map.put(acc, :probability, extract_probability(vals))
       _, acc -> acc
     end)
   end

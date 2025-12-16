@@ -1,6 +1,6 @@
 # UzuParser
 
-Parser for Uzu pattern mini-notation, used in live coding and algorithmic music generation.
+Parser for Strudel/Tidal-style mini-notation, used in live coding and algorithmic music generation.
 
 ## Overview
 
@@ -15,9 +15,7 @@ Add `uzu_parser` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:uzu_parser, "~> 0.5.0"}
-    # Or for local development:
-    # {:uzu_parser, path: "../uzu_parser"}
+    {:uzu_parser, "~> 0.6.0"}
   ]
 end
 ```
@@ -33,14 +31,10 @@ end
 #      %{type: :atom, value: "hh", source_start: 6, source_end: 8}
 #    ]}}
 
-# For timed events, use uzu_pattern:
+# For timed events, use UzuPattern:
 pattern = UzuPattern.parse("bd sd hh")
-events = UzuPattern.Pattern.query(pattern, 0)
-# => [
-#   %UzuPattern.Event{sound: "bd", time: 0.0, duration: 0.333...},
-#   %UzuPattern.Event{sound: "sd", time: 0.333..., duration: 0.333...},
-#   %UzuPattern.Event{sound: "hh", time: 0.666..., duration: 0.333...}
-# ]
+haps = UzuPattern.query(pattern, 0)
+# => [%Hap{value: %{sound: "bd"}, part: %{begin: Ratio.new(0,1), ...}}, ...]
 ```
 
 ## Syntax
@@ -79,6 +73,15 @@ UzuParser.parse("bd*4")      # equivalent to "bd bd bd bd"
 UzuParser.parse("[bd sd]*2") # repeat the subdivision
 ```
 
+### Replication
+
+Exclamation mark replicates with weight:
+
+```elixir
+UzuParser.parse("bd!4")      # four bds, each with weight 1
+UzuParser.parse("[bd!3 sd]") # three bds then one sd in subdivision
+```
+
 ### Division (Slow)
 
 Slash spreads pattern across cycles:
@@ -113,18 +116,22 @@ UzuParser.parse("bd?")       # 50% chance to play
 UzuParser.parse("bd?0.25")   # 25% chance to play
 ```
 
-### Weight / Elongation
+### Weight
 
 At sign specifies relative duration:
 
 ```elixir
 UzuParser.parse("bd@2 sd")   # kick twice as long as snare
+UzuParser.parse("bd@3 sd@1") # kick takes 3/4, snare takes 1/4
 ```
+
+### Elongation
 
 Underscore extends the previous sound:
 
 ```elixir
 UzuParser.parse("bd _ sd")   # kick held for 2/3, snare for 1/3
+UzuParser.parse("bd _ _ sd") # kick held for 3/4, snare for 1/4
 ```
 
 ### Alternation
@@ -135,12 +142,21 @@ Angle brackets cycle through options:
 UzuParser.parse("<bd sd hh>")  # bd on cycle 0, sd on cycle 1, hh on cycle 2
 ```
 
+### Random Choice
+
+Pipe randomly selects one option:
+
+```elixir
+UzuParser.parse("bd|sd|hh")  # pick one randomly per cycle
+```
+
 ### Polymetric
 
 Curly braces create independent timing:
 
 ```elixir
 UzuParser.parse("{bd sd, hh hh hh}")  # 2-against-3 polyrhythm
+UzuParser.parse("{bd sd hh}%8")       # fit pattern into 8 steps
 ```
 
 ### Euclidean Rhythms
@@ -152,30 +168,21 @@ UzuParser.parse("bd(3,8)")      # 3 hits distributed over 8 steps
 UzuParser.parse("bd(3,8,1)")    # with rotation offset
 ```
 
-### Random Choice
-
-Pipe randomly selects one option:
-
-```elixir
-UzuParser.parse("bd|sd|hh")  # pick one randomly per cycle
-```
-
 ### Parameters
 
-Pipe with key:value sets parameters:
+Pipe with key:value sets sound parameters:
 
 ```elixir
 UzuParser.parse("bd|gain:0.8|speed:2")
+UzuParser.parse("bd|lpf:2000|room:0.5")
 ```
 
-### Jazz/Harmony Extensions
+### Period Separator
 
-Scale degrees, chord symbols, and roman numerals:
+Period works like space but creates visual grouping:
 
 ```elixir
-UzuParser.parse("^1 ^3 ^5 ^b7")    # scale degrees
-UzuParser.parse("@Dm7 @G7 @Cmaj7") # chord symbols
-UzuParser.parse("@ii @V @I")       # roman numerals
+UzuParser.parse("bd sd . hh cp")  # same as "bd sd hh cp"
 ```
 
 ## AST Structure
@@ -188,20 +195,37 @@ The parser returns an AST with node types:
 - `:alternation` - Angle bracket alternation
 - `:polymetric` - Curly brace polymetric group
 - `:atom` - Sound/note with optional modifiers
-- `:rest` - Silence
-- `:elongation` - Underscore continuation
+- `:rest` - Silence (`~`)
+- `:elongation` - Underscore continuation (`_`)
 
 Each atom node includes:
 - `value` - Sound name
-- `sample` - Sample number (if `:n` specified)
-- `repeat` - Repetition count (if `*n` specified)
-- `euclidean` - `[k, n, offset]` (if `(k,n)` specified)
-- `probability` - Float (if `?` specified)
-- `weight` - Float (if `@n` specified)
-- `params` - Map of parameters
+- `sample` - Sample number (from `:n`)
+- `repeat` - Repetition count (from `*n`)
+- `replicate` - Replication count (from `!n`)
+- `euclidean` - `{k, n, offset}` tuple (from `(k,n)` or `(k,n,o)`)
+- `probability` - Float 0-1 (from `?` or `?n`)
+- `weight` - Float (from `@n`)
+- `params` - Map of parameters (from `|key:value`)
 - `source_start`, `source_end` - Position in source string
 
-## Ecosystem Role
+## Source Position Tracking
+
+All AST nodes include source positions for editor integration:
+
+```elixir
+{:ok, {:sequence, nodes}} = UzuParser.parse("bd sd")
+[bd, sd] = nodes
+
+bd.source_start  # => 0
+bd.source_end    # => 2
+sd.source_start  # => 3
+sd.source_end    # => 5
+```
+
+This enables features like syntax highlighting, error reporting, and click-to-edit in live coding environments.
+
+## Ecosystem
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -216,8 +240,19 @@ Each atom node includes:
 ```
 
 - **UzuParser**: Parses mini-notation strings into AST
-- **UzuPattern**: Interprets AST into patterns, applies transformations
+- **UzuPattern**: Interprets AST into patterns, applies transformations, queries events
 - **Waveform**: Handles audio output via OSC/SuperDirt/Web Audio
+
+## Error Handling
+
+```elixir
+# Successful parse
+{:ok, ast} = UzuParser.parse("bd sd")
+
+# Parse error
+{:error, message} = UzuParser.parse("[bd sd")
+# => {:error, "missing terminator: ]"}
+```
 
 ## Development
 

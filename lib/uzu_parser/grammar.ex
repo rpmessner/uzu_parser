@@ -53,8 +53,9 @@ defmodule UzuParser.Grammar do
 
   number = choice([float_number, integer_number])
 
-  # Sound name characters (letters, numbers, some special chars including underscore)
-  sound_char = ascii_char([?a..?z, ?A..?Z, ?0..?9, ?-, ?#, ?^, ?_])
+  # Sound name characters (letters, numbers, some special chars including underscore and period)
+  # Period is part of sound names in Strudel (e.g., bd.sd.hh is ONE sound, not three)
+  sound_char = ascii_char([?a..?z, ?A..?Z, ?0..?9, ?-, ?#, ?^, ?_, ?.])
 
   # Basic sound name: bd, sd, hh, 808, etc.
   sound_name =
@@ -207,10 +208,11 @@ defmodule UzuParser.Grammar do
   # ============================================================
 
   # Subdivision: [bd sd], [bd sd]*2, [bd sd]/2, [bd sd]!, [bd sd]!3, [bd sd]?, [bd sd]?0.5
+  # Also supports empty brackets [] as a rest
   defcombinatorp(
     :subdivision_inner,
     ignore(string("["))
-    |> concat(parsec(:sequence_or_stack))
+    |> optional(parsec(:sequence_or_stack))
     |> ignore(optional_ws)
     |> ignore(string("]"))
     |> tag(:subdivision_content)
@@ -298,18 +300,13 @@ defmodule UzuParser.Grammar do
     ])
   )
 
-  # Separator between sequence items (whitespace, period, or implicit between brackets)
+  # Separator between sequence items (whitespace or implicit between brackets)
   # Adjacent brackets like "][" or "><" are implicit separators
+  # Note: Period is NOT a separator - it's part of sound names (Strudel compatibility)
   separator =
     choice([
-      # Explicit whitespace or period separator
-      times(
-        choice([
-          ascii_string([?\s, ?\t, ?\n, ?\r], min: 1),
-          string(".") |> lookahead_not(ascii_char([?0..?9]))
-        ]),
-        min: 1
-      ),
+      # Explicit whitespace separator
+      ascii_string([?\s, ?\t, ?\n, ?\r], min: 1),
       # Implicit separator: lookahead for opening bracket/angle (allows [a][b], <a><b>, [a]<b>)
       lookahead(ascii_char([?[, ?<, ?{]))
     ])
@@ -346,6 +343,8 @@ defmodule UzuParser.Grammar do
 
     element = %{
       type: :atom,
+      # Keep all values as strings - context-specific conversion happens in
+      # pattern starters (note/1, n/1) where the semantics are known
       value: sound,
       sample: Keyword.get(modifiers, :sample),
       weight: Keyword.get(modifiers, :weight, 1.0),
@@ -394,6 +393,8 @@ defmodule UzuParser.Grammar do
 
     element = %{
       type: :atom,
+      # Keep all values as strings - context-specific conversion happens in
+      # pattern starters (note/1, n/1) where the semantics are known
       value: sound,
       sample: Keyword.get(modifiers, :sample),
       weight: Keyword.get(modifiers, :weight, 1.0),
@@ -539,7 +540,8 @@ defmodule UzuParser.Grammar do
   end
 
   # Rough size estimates for position tracking
-  defp estimate_item_size(%{type: :atom, value: v}), do: byte_size(v)
+  # Parser keeps values as strings, so only binary check needed
+  defp estimate_item_size(%{type: :atom, value: v}) when is_binary(v), do: byte_size(v)
   defp estimate_item_size(_), do: 0
 
   # ============================================================

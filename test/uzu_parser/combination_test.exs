@@ -78,7 +78,6 @@ defmodule UzuParser.CombinationTest do
       assert length(children) == 2
     end
 
-    @tag :pending
     test "[a b]! - replicate (bare) after subdivision" do
       # Should default to replicate: 1 (or maybe 2?)
       node = parse_first("[a b]!")
@@ -87,7 +86,6 @@ defmodule UzuParser.CombinationTest do
       assert node.replicate == 1
     end
 
-    @tag :pending
     test "[a b]!3 - replicate with count after subdivision" do
       node = parse_first("[a b]!3")
 
@@ -95,7 +93,6 @@ defmodule UzuParser.CombinationTest do
       assert node.replicate == 3
     end
 
-    @tag :pending
     test "[a b]? - probability (default 0.5) after subdivision" do
       node = parse_first("[a b]?")
 
@@ -103,7 +100,6 @@ defmodule UzuParser.CombinationTest do
       assert node.probability == 0.5
     end
 
-    @tag :pending
     test "[a b]?0.25 - probability with value after subdivision" do
       node = parse_first("[a b]?0.25")
 
@@ -175,7 +171,6 @@ defmodule UzuParser.CombinationTest do
       assert node.division == 2
     end
 
-    @tag :pending
     test "<a b>! - replicate after alternation" do
       node = parse_first("<a b>!")
 
@@ -183,7 +178,6 @@ defmodule UzuParser.CombinationTest do
       assert node.replicate == 1
     end
 
-    @tag :pending
     test "<a b>!3 - replicate with count after alternation" do
       node = parse_first("<a b>!3")
 
@@ -191,7 +185,6 @@ defmodule UzuParser.CombinationTest do
       assert node.replicate == 3
     end
 
-    @tag :pending
     test "<a b>? - probability after alternation" do
       node = parse_first("<a b>?")
 
@@ -224,7 +217,6 @@ defmodule UzuParser.CombinationTest do
       assert length(groups) == 2
     end
 
-    @tag :pending
     test "{a b, c d}*2 - repeat after polymetric" do
       node = parse_first("{a b, c d}*2")
 
@@ -232,7 +224,6 @@ defmodule UzuParser.CombinationTest do
       assert node.repeat == 2
     end
 
-    @tag :pending
     test "{a b, c d}/2 - division after polymetric" do
       node = parse_first("{a b, c d}/2")
 
@@ -240,7 +231,6 @@ defmodule UzuParser.CombinationTest do
       assert node.division == 2
     end
 
-    @tag :pending
     test "{a b, c d}? - probability after polymetric" do
       node = parse_first("{a b, c d}?")
 
@@ -285,7 +275,6 @@ defmodule UzuParser.CombinationTest do
       assert node.replicate == 3
     end
 
-    @tag :pending
     test "a! - replicate bare (should default)" do
       [node] = parse_nodes("a!")
       assert node.value == "a"

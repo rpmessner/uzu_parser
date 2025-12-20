@@ -35,11 +35,12 @@ defmodule UzuParser.GrammarTest do
       assert {:ok, []} = parse("   ")
     end
 
-    test "period separator works like space" do
+    test "period is part of sound name (Strudel compatibility)" do
+      # In Strudel, bd.sd.hh is ONE sound name, not three separate sounds
       nodes = parse_ast("bd.sd.hh")
 
-      assert length(nodes) == 3
-      assert Enum.map(nodes, & &1.value) == ["bd", "sd", "hh"]
+      assert length(nodes) == 1
+      assert hd(nodes).value == "bd.sd.hh"
     end
 
     test "handles various whitespace" do

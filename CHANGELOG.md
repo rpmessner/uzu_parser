@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-12-20
+
+### Changed
+- **Period in sound names** - Period (`.`) is now part of sound names for Strudel compatibility. `bd.sd.hh` is parsed as one sound, not three separate sounds separated by periods.
+- **Empty brackets** - `[]` now parses as a rest (empty subdivision)
+
+### Fixed
+- Enabled previously pending tests for modifiers on groupers (`[a b]!`, `<a b>!3`, `{a b, c d}?`, etc.)
+
 ## [0.5.0] - 2025-12-07
 
 ### Changed
@@ -78,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Subdivisions: `"bd [sd sd] hh"`
 - Repetition: `"bd*4"`
 
+[0.6.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.6.0
 [0.5.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.5.0
 [0.4.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.4.0
 [0.3.0]: https://github.com/rpmessner/uzu_parser/releases/tag/v0.3.0
